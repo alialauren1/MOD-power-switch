@@ -155,20 +155,17 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
   int avg_sample_counter = 0;
   uint8_t raw[5] ;//= { 0 }; // 5-byte buffer to then fill with: [status][High P][Low P][High T][Low T]
   uint32_t timer_start, timer_end, elapsed_ms; // variables
+  bool read_p_sensor = false; // for first loop, no initial value to read
 
   keller_buffer_init(); // initialize buffer
 
   while (1){
 
-      // Read result from previous trigger
-      bool read_p_sensor = keller_p_sensor_read(raw,sizeof(raw)); // Read 5 bytes from sensor into raw
-
-      keller_p_sensor_trigger(); // Trigger next conversion (Trigger is essentially Write but it doesnt transfer data just triggers a conversion on sensor)
-
+      keller_p_sensor_trigger(); // Trigger/Write next conversion (Trigger is essentially Write but it doesnt transfer data just triggers a conversion on sensor)
       timer_start = sl_sleeptimer_get_tick_count();
 
       if (first_loop){
-          printf("first looooop\r\n");
+          printf("first loop, wait for next loop to begin post process of data \r\n");
           first_loop = false;
       }
       else if (!read_p_sensor) { // if read transaction did not succeed
@@ -221,6 +218,9 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
                         OS_OPT_TIME_HMSM_STRICT,        // Micrium option of strict timing mode
                         &os_time_delay_err);            // error output (should be zero)
       }
+
+      read_p_sensor = keller_p_sensor_read(raw,sizeof(raw)); // Read 5 bytes from trigger: sensor vals into raw
+
   }
 
 }
