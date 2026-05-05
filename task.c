@@ -137,13 +137,6 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
   RTOS_ERR delay_err;
   OSTimeDlyHMSM(0, 0, 0, 500, OS_OPT_TIME_HMSM_STRICT, &delay_err); // delay so there's time for SD card to startup
 
-//  // Initialize application
-//  bool keller_p_sensor_ok = keller_p_sensor_init(); // checks to see if sensor responds to address being called
-//
-//  if (!keller_p_sensor_ok) { // returns if sensor not ACKed
-//      printf("ERROR: No I2C ACK\r\n");
-//      return;}
-
   bool keller_p_sensor_ok = false;
   while(!keller_p_sensor_ok){
       keller_p_sensor_ok = keller_p_sensor_init();
@@ -160,13 +153,12 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
   int32_t pressure_sum = 0;
   int32_t temp_sum = 0;
   int avg_sample_counter = 0;
+  uint8_t raw[5] ;//= { 0 }; // 5-byte buffer to then fill with: [status][High P][Low P][High T][Low T]
+  uint32_t timer_start, timer_end, elapsed_ms; // variables
 
   keller_buffer_init(); // initialize buffer
 
   while (1){
-
-      uint8_t raw[5] ;//= { 0 }; // 5-byte buffer to then fill with: [status][High P][Low P][High T][Low T]
-      uint32_t timer_start, timer_end, elapsed_ms; // variables
 
       // Read result from previous trigger
       bool read_p_sensor = keller_p_sensor_read(raw,sizeof(raw)); // Read 5 bytes from sensor into raw
@@ -214,10 +206,6 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
                   pressure_sum=0;
                   temp_sum=0;
                   avg_sample_counter=0;
-//                  keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT, temp_sum/AVG_SAMPLE_COUNT); // store in buffer for real time use
-//                  pressure_sum=0;
-//                  temp_sum=0;
-//                  avg_sample_counter=0;
               }
 
           }}
