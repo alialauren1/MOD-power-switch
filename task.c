@@ -165,7 +165,7 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
 
   while (1){
 
-      uint8_t raw[5] = { 0 }; // 5-byte buffer to then fill with: [status][High P][Low P][High T][Low T]
+      uint8_t raw[5] ;//= { 0 }; // 5-byte buffer to then fill with: [status][High P][Low P][High T][Low T]
       uint32_t timer_start, timer_end, elapsed_ms; // variables
 
       // Read result from previous trigger
@@ -275,17 +275,6 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              sample.t_ms / 1000, sample.t_ms % 1000);
-//          int len = snprintf(data_array_for_sd_card,sizeof(data_array_for_sd_card),
-//                             "%s%d.%03d,%d.%02d,%lu.%03lu\r\n",
-//                             sample.p_mbar<0 ? "-":"",
-//                             (int)(abs(sample.p_mbar) / 1000),
-//                             (int)(abs(sample.p_mbar) % 1000),
-//                             (int)((sample.t_centi * 9 / 5 + 3200) / 100),
-//                             (int)((sample.t_centi * 9 / 5 + 3200) % 100),
-//                             t_ms / 1000, t_ms % 1000); //-> t_centi (hundredths of C) to F
-                             //(int)(sample.t_centi / 100),  // Celcius
-                             //(int)(sample.t_centi % 100)); // Celcius
-                             // printf("%s",data_array_for_sd_card);
           mod_sd_write_AW(data_array_for_sd_card, len);
           }
 
