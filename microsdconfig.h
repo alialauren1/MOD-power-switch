@@ -18,7 +18,7 @@
 
 //#include "bspconfig.h"
 
-#define MICROSD_HI_SPI_FREQ     1000000
+#define MICROSD_HI_SPI_FREQ     15000000 //1000000
 #define MICROSD_LO_SPI_FREQ     100000
 
 //#if defined(BSP_STK_BRD2204A)

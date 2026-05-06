@@ -47,7 +47,7 @@
 #define STATUS_BUSY_BIT     (1 << 5)  // 1 = sensor still converting
 #define STATUS_MEM_ERR_BIT  (1 << 2)  // 1 = internal checksum failed
 #define P_OFFSET_MBAR 0 // calibration offset
-#define AVG_SAMPLE_COUNT 10 // amount of samples that we use to average before printing
+#define AVG_SAMPLE_COUNT 1 // amount of samples that we use to average before printing
 
 //For Keller_get_pressure_task_create
 #define KELLER_GET_PRESSURE_TASK_PRIO      11u
@@ -198,8 +198,8 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
               temp_sum += t_centi;
               avg_sample_counter++;
               if (avg_sample_counter==AVG_SAMPLE_COUNT){
-                  uint32_t t_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
-                  keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT, temp_sum/AVG_SAMPLE_COUNT, t_ms);// store in buffer for real time use
+                  uint32_t t_ticks = sl_sleeptimer_get_tick_count(); //sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
+                  keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT, temp_sum/AVG_SAMPLE_COUNT, t_ticks);// store in buffer for real time use
                   pressure_sum=0;
                   temp_sum=0;
                   avg_sample_counter=0;
@@ -220,6 +220,8 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
       }
 
       read_p_sensor = keller_p_sensor_read(raw,sizeof(raw)); // Read 5 bytes from trigger: sensor vals into raw
+
+
 
   }
 
@@ -254,19 +256,28 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
       keller_sample_t sample;
       if (keller_buffer_retrieve(&sample)) {
           char data_array_for_sd_card[80];
+
 //          uint32_t t_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
+          uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
+          uint32_t t_sec_whole = sample.t_ticks / freq;
+          uint32_t t_sec_frac  = ((uint64_t)(sample.t_ticks % freq) * 1000000) / freq;
+
           int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                             "%s%d.%03d,%d.%02d,%lu.%03lu\r\n",
+                             "%s%d.%03d,%d.%02d,%lu.%06lu\r\n",
                              sample.p_mbar<0 ? "-":"",
                              (int)(abs(sample.p_mbar) / 1000),
                              (int)(abs(sample.p_mbar) % 1000),
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
-                             sample.t_ms / 1000, sample.t_ms % 1000);
+                             t_sec_whole, t_sec_frac);
+          uint32_t write_start = sl_sleeptimer_get_tick_count();
           mod_sd_write_AW(data_array_for_sd_card, len);
+          uint32_t write_end = sl_sleeptimer_get_tick_count();
+          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+          printf("SD write took: %lu ms\r\n", write_ms);
           }
 
-      if (GPIO_PinInGet(gpioPortC,8)==0 && mod_sd_is_open_AW()){ // sees if pint has been pressed and if file is closed too
+      if (GPIO_PinInGet(gpioPortC,8)==0 && mod_sd_is_open_AW()){ // sees if button has been pressed and if file is closed too
           mod_sd_close_and_unmount_AW();
       }
 

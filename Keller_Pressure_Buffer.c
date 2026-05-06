@@ -19,13 +19,13 @@ void keller_buffer_init(void) {
     count = 0;
 }
 
-bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint32_t t_ms) {
+bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint32_t t_ticks) {
     if (count >= KELLER_BUFFER_SIZE) {
         return false;
     }
     buffer[head].p_mbar  = p_mbar;
     buffer[head].t_centi = t_centi;
-    buffer[head].t_ms = t_ms;
+    buffer[head].t_ticks = t_ticks;
     head = (head + 1) % KELLER_BUFFER_SIZE;
     count++;
     return true;
