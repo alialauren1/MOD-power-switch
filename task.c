@@ -156,6 +156,7 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
   uint8_t raw[5] ;//= { 0 }; // 5-byte buffer to then fill with: [status][High P][Low P][High T][Low T]
   uint32_t timer_start, timer_end, elapsed_ms; // variables
   bool read_p_sensor = false; // for first loop, no initial value to read
+  uint32_t t_ticks = 0;
 
   keller_buffer_init(); // initialize buffer
 
@@ -198,7 +199,7 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
               temp_sum += t_centi;
               avg_sample_counter++;
               if (avg_sample_counter==AVG_SAMPLE_COUNT){
-                  uint32_t t_ticks = sl_sleeptimer_get_tick_count(); //sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
+                  // uint32_t t_ticks = sl_sleeptimer_get_tick_count(); //sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
                   keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT, temp_sum/AVG_SAMPLE_COUNT, t_ticks);// store in buffer for real time use
                   pressure_sum=0;
                   temp_sum=0;
@@ -220,7 +221,7 @@ void keller_get_pressure_task(void *p_arg)  // Sealed Gauge Sensor, measures 1 b
       }
 
       read_p_sensor = keller_p_sensor_read(raw,sizeof(raw)); // Read 5 bytes from trigger: sensor vals into raw
-
+      t_ticks = sl_sleeptimer_get_tick_count(); // store time the sample was read
 
 
   }
@@ -254,7 +255,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
   while (1) {
       // drain circular buffer and printf
       keller_sample_t sample;
-      if (keller_buffer_retrieve(&sample)) {
+      while (keller_buffer_retrieve(&sample)) {
           char data_array_for_sd_card[80];
 
 //          uint32_t t_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
