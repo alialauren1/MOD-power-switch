@@ -72,7 +72,7 @@ static CPU_STK print_stk[PRINT_PRESSURE_TASK_STK_SIZE];
 static OS_TCB  print_tcb;
 
 //For Button task
-#define BUTTON_TASK_PRIO      12u
+#define BUTTON_TASK_PRIO      14u
 #define BUTTON_TASK_STK_SIZE  128u
 static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
 static OS_TCB  button_tcb;
@@ -261,6 +261,7 @@ void keller_get_pressure_task(void *p_arg)
   printf("Sensor found at 0x%02X\r\n", SENSOR_I2C_ADDR);
 
   bool first_loop = true;
+  bool data_processed = false;
   int32_t pressure_sum = 0;
   int32_t temp_sum = 0;
   int avg_sample_counter = 0;
@@ -299,7 +300,7 @@ void keller_get_pressure_task(void *p_arg)
                   state = STATE_READ;
               }
               else if (now < cycle_start + sample_interval_ticks) {
-                  if (!first_loop) {
+                  if (!first_loop && !data_processed) {
                       uint8_t status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
                           printf("ERROR: Bad status byte 0x%02X\r\n", status);
@@ -326,10 +327,14 @@ void keller_get_pressure_task(void *p_arg)
                               temp_sum = 0;
                               avg_sample_counter = 0;
                           }
+                          data_processed = true;
                       }
                   }
                   RTOS_ERR yield_err;
-                  OSTimeDly(1, OS_OPT_TIME_DLY, &yield_err);
+                  uint32_t remaining = (cycle_start + sample_interval_ticks) - now;
+                  uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
+                  if (remaining_ms < 1) remaining_ms = 1;
+                  OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
                   state = STATE_WAIT;
               }
               else {
@@ -343,6 +348,7 @@ void keller_get_pressure_task(void *p_arg)
               t_ticks = sl_sleeptimer_get_tick_count();
               if (read_ok) {
                   first_loop = false;
+                  data_processed = false;
                   state = STATE_DELAY;
               }
               else if (!read_ok) {
@@ -362,7 +368,10 @@ void keller_get_pressure_task(void *p_arg)
               }
               else if (now < cycle_start + total_interval_ticks) {
                   RTOS_ERR yield_err;
-                  OSTimeDly(1, OS_OPT_TIME_DLY, &yield_err);
+                  uint32_t remaining = (cycle_start + total_interval_ticks) - now;
+                  uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
+                  if (remaining_ms < 1) remaining_ms = 1;
+                  OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
                   state = STATE_DELAY;
               }
               else {
