@@ -74,7 +74,7 @@ static bool keller_p_sensor_init(void) // checks if sensor responds to its addre
   seq.buf[1].data = NULL;           // Read buffer: ignore because we're writing only here
   seq.buf[1].len  = 0;              //              also not used
 
-  return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone); // runs transaction on bus and returns true if sensor ACKed
+  return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone); // compare return value of I2C_TransferReturn_TypeDef to i2cTransferDone, if equal then true (1) gets returned, means successful.
 }
 
 //For Keller_get_pressure_task
@@ -90,7 +90,7 @@ static bool keller_p_sensor_trigger(void)
   seq.buf[1].data = NULL;
   seq.buf[1].len  = 0;
 
-  return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone);
+  return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone); // compare return value of I2C_TransferReturn_TypeDef to i2cTransferDone, if equal then true (1) gets returned, means successful.
 }
 
 //For Keller_get_pressure_task
