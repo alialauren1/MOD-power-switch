@@ -268,6 +268,7 @@ void keller_get_pressure_task(void *p_arg)
   uint8_t raw[5];
   uint32_t t_ticks = 0;
   uint32_t cycle_start = 0;
+  uint32_t time_after_trigger = 0;
   uint32_t sample_interval_ticks = sl_sleeptimer_ms_to_tick(SAMPLE_INTERVAL_MS);
   uint32_t total_interval_ticks  = sl_sleeptimer_ms_to_tick(TOTAL_INTERVAL_MS);
 
@@ -279,9 +280,10 @@ void keller_get_pressure_task(void *p_arg)
       switch (state) {
 
           case STATE_WRITE: {
+              cycle_start = sl_sleeptimer_get_tick_count();
               bool trigger_ok = keller_p_sensor_trigger();
               if (trigger_ok) {
-                  cycle_start = sl_sleeptimer_get_tick_count();
+                  time_after_trigger = sl_sleeptimer_get_tick_count();
                   state = STATE_WAIT;
               }
               else if (!trigger_ok) {
@@ -296,10 +298,10 @@ void keller_get_pressure_task(void *p_arg)
 
           case STATE_WAIT: {
               uint32_t now = sl_sleeptimer_get_tick_count();
-              if (now >= cycle_start + sample_interval_ticks) {
+              if (now >= time_after_trigger + sample_interval_ticks) {
                   state = STATE_READ;
               }
-              else if (now < cycle_start + sample_interval_ticks) {
+              else if (now < time_after_trigger + sample_interval_ticks) {
                   if (!first_loop && !data_processed) {
                       uint8_t status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
