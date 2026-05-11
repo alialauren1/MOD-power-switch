@@ -322,12 +322,24 @@ void keller_get_pressure_task(void *p_arg)
                           temp_sum += t_centi;
                           avg_sample_counter++;
                           if (avg_sample_counter == AVG_SAMPLE_COUNT) {
-                              keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
+                              if (keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
                                                   temp_sum/AVG_SAMPLE_COUNT,
-                                                  t_ticks);
-                              pressure_sum = 0;
-                              temp_sum = 0;
-                              avg_sample_counter = 0;
+                                                  t_ticks)){
+                                  pressure_sum = 0;
+                                  temp_sum = 0;
+                                  avg_sample_counter = 0;
+                              }
+                              else {
+                                  uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
+                                  uint32_t t_sec_whole = t_ticks / freq;
+                                  uint32_t t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
+                                  printf("WARNING: buffer full, sample dropped @ %lu.%06lu\r\n",t_sec_whole,t_sec_frac);
+
+                                  pressure_sum = 0;
+                                  temp_sum = 0;
+                                  avg_sample_counter = 0;
+                                       }
+
                           }
                           data_processed = true;
                       }
@@ -432,7 +444,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
           mod_sd_write_AW(data_array_for_sd_card, len);
           uint32_t write_end = sl_sleeptimer_get_tick_count();
           uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-          printf("SD write took: %lu ms\r\n", write_ms);
+          printf("SD W: %lu ms\r\n", write_ms);
           }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
