@@ -435,7 +435,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
           printf("SD write took: %lu ms\r\n", write_ms);
           }
 
-      OSTimeDly(SAMPLE_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
 }
 
