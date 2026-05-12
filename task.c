@@ -433,7 +433,6 @@ void retrieve_pressure_from_buffer_task_create(void) {
 
 void retrieve_pressure_from_buffer_task(void *p_arg) {
   (void)p_arg;
-  static uint32_t cycle_count = 0;  // add this at the top of the function
   RTOS_ERR err;
 
   while (1) {
@@ -455,23 +454,12 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              t_sec_whole, t_sec_frac);
-          //uint32_t write_start = sl_sleeptimer_get_tick_count();
+//          uint32_t write_start = sl_sleeptimer_get_tick_count();
           mod_sd_write_AW(data_array_for_sd_card, len);
-          //uint32_t write_end = sl_sleeptimer_get_tick_count();
-          //uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-          //printf("SD W: %lu ms\r\n", write_ms);
+//          uint32_t write_end = sl_sleeptimer_get_tick_count();
+//          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+//          printf("SD W: %lu ms\r\n", write_ms);
           }
-
-      cycle_count++;
-      if (cycle_count % 100 == 0) {
-          CPU_STK_SIZE stk_free;
-          CPU_STK_SIZE stk_used;
-          RTOS_ERR stk_err;
-          OSTaskStkChk(&print_tcb, &stk_free, &stk_used, &stk_err);
-          printf("Print free: %u used: %u\r\n", stk_free, stk_used);
-          OSTaskStkChk(&keller_tcb, &stk_free, &stk_used, &stk_err);
-          printf("Keller free: %u used: %u\r\n", stk_free, stk_used);
-      }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
