@@ -61,15 +61,17 @@ typedef enum {
 
 //For Keller_get_pressure_task_create
 #define KELLER_GET_PRESSURE_TASK_PRIO      11u
-#define KELLER_GET_PRESSURE_TASK_STK_SIZE  256u
+#define KELLER_GET_PRESSURE_TASK_STK_SIZE  512u
 static CPU_STK keller_stk[KELLER_GET_PRESSURE_TASK_STK_SIZE];
 static OS_TCB  keller_tcb;
 
 //For Printing Pressure tasks
 #define PRINT_PRESSURE_TASK_PRIO      13u
-#define PRINT_PRESSURE_TASK_STK_SIZE  256u
+#define PRINT_PRESSURE_TASK_STK_SIZE  512u
 static CPU_STK print_stk[PRINT_PRESSURE_TASK_STK_SIZE];
 static OS_TCB  print_tcb;
+
+static char data_array_for_sd_card[80]; // define at top of file and make static char array so doesnt use stack memory, possibly taking 80 bytes every run
 
 //For Button task
 #define BUTTON_TASK_PRIO      14u
@@ -78,13 +80,13 @@ static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
 static OS_TCB  button_tcb;
 
 //For Keller_get_pressure_task
-static bool keller_p_sensor_init(void) // checks if sensor responds to its address being called
+static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
 { // Send a zero-length write to confirm the sensor is on the bus
   I2C_TransferSeq_TypeDef seq;
   uint8_t dummy = 0;  //0 is placeholder byte
 
   seq.addr        = SENSOR_I2C_ADDR << 1; // bit shift by 1 the sensor address to make room for R/W bit
-  seq.flags       = I2C_FLAG_WRITE; // defined in em_i2c.h line 117, tells driver to set up write
+  seq.flags       = I2C_FLAG_WRITE; // tells driver to set up write
   seq.buf[0].data = &dummy;         // Write buffer: pointer to data location (dummy since nothing sent)
   seq.buf[0].len  = 0;              //               zero bytes to send b/c only checking ACK, no data needed
   seq.buf[1].data = NULL;           // Read buffer: ignore because we're writing only here
@@ -95,14 +97,14 @@ static bool keller_p_sensor_init(void) // checks if sensor responds to its addre
 
 //For Keller_get_pressure_task
 static bool keller_p_sensor_trigger(void)
-{ // Send 0xAC to start a conversion — result is ready after required millisecond duration
+{
   I2C_TransferSeq_TypeDef seq;
-  uint8_t cmd = 0xAC;
+  uint8_t cmd = 0xAC;           // Send 0xAC to start a conversion — result is ready after required millisecond duration
 
-  seq.addr        = SENSOR_I2C_ADDR << 1;
-  seq.flags       = I2C_FLAG_WRITE;
-  seq.buf[0].data = &cmd;
-  seq.buf[0].len  = 1;
+  seq.addr        = SENSOR_I2C_ADDR << 1; // who to talk to: sensor address & bit shifted by 1 the sensor address to make room for R/W bit
+  seq.flags       = I2C_FLAG_WRITE;       // tells driver to set up write
+  seq.buf[0].data = &cmd;                 // write buffer
+  seq.buf[0].len  = 1;                    // amount of bytes
   seq.buf[1].data = NULL;
   seq.buf[1].len  = 0;
 
@@ -110,18 +112,18 @@ static bool keller_p_sensor_trigger(void)
 }
 
 //For Keller_get_pressure_task
-static bool keller_p_sensor_read(uint8_t *data, uint16_t len)
-{ // Read conversion result — 5 bytes: [status][P_hi][P_lo][T_hi][T_lo]
+static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion result — 5 bytes: [status][P_hi][P_lo][T_hi][T_lo]
+{
   I2C_TransferSeq_TypeDef seq;
 
-  seq.addr        = SENSOR_I2C_ADDR << 1;
-  seq.flags       = I2C_FLAG_READ;
-  seq.buf[0].data = data;
-  seq.buf[0].len  = len;
+  seq.addr        = SENSOR_I2C_ADDR << 1;   // who to talk to
+  seq.flags       = I2C_FLAG_READ;          // tells driver to set up read
+  seq.buf[0].data = data;                   // read data from buffer
+  seq.buf[0].len  = len;                    // how many bytes
   seq.buf[1].data = NULL;
   seq.buf[1].len  = 0;
 
-  return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone);
+  return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone); // compare return value of I2C_TransferReturn_TypeDef to i2cTransferDone, if equal then true (1) gets returned, means successful.
 }
 
 void keller_get_pressure_task(void *p_arg); // forward declaration
@@ -272,6 +274,18 @@ void keller_get_pressure_task(void *p_arg)
   uint32_t sample_interval_ticks = sl_sleeptimer_ms_to_tick(SAMPLE_INTERVAL_MS);
   uint32_t total_interval_ticks  = sl_sleeptimer_ms_to_tick(TOTAL_INTERVAL_MS);
 
+  // initialize others inside the while loop. then inside just modify the value.
+  uint8_t status = 0;
+
+  uint16_t pressure = 0;
+  uint16_t temp_raw = 0;
+  int32_t p_mbar  = 0;
+  int32_t t_centi = 0;
+
+  uint32_t freq = 0;
+  uint32_t t_sec_whole = 0;
+  uint32_t t_sec_frac  = 0;
+
   keller_buffer_init();
 
   keller_state_t state = STATE_WRITE; // start on this state
@@ -303,7 +317,7 @@ void keller_get_pressure_task(void *p_arg)
               }
               else if (now < time_after_trigger + sample_interval_ticks) {
                   if (!first_loop && !data_processed) {
-                      uint8_t status = raw[0];
+                      status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
                           printf("ERROR: Bad status byte 0x%02X\r\n", status);
                       }
@@ -314,10 +328,10 @@ void keller_get_pressure_task(void *p_arg)
                           printf("ERROR: Sensor memory error\r\n");
                       }
                       else {
-                          uint16_t pressure = (uint16_t)((raw[1] << 8) | raw[2]);
-                          uint16_t temp_raw = (uint16_t)((raw[3] << 8) | raw[4]);
-                          int32_t p_mbar  = (int32_t)(((int64_t)pressure - 16384) * 100000 / 32768);
-                          int32_t t_centi = ((int32_t)(temp_raw >> 4) - 24) * 5 - 5000;
+                          pressure = (uint16_t)((raw[1] << 8) | raw[2]);
+                          temp_raw = (uint16_t)((raw[3] << 8) | raw[4]);
+                          p_mbar  = (int32_t)(((int64_t)pressure - 16384) * 100000 / 32768);
+                          t_centi = ((int32_t)(temp_raw >> 4) - 24) * 5 - 5000;
                           pressure_sum += p_mbar;
                           temp_sum += t_centi;
                           avg_sample_counter++;
@@ -330,9 +344,9 @@ void keller_get_pressure_task(void *p_arg)
                                   avg_sample_counter = 0;
                               }
                               else {
-                                  uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
-                                  uint32_t t_sec_whole = t_ticks / freq;
-                                  uint32_t t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
+                                  freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
+                                  t_sec_whole = t_ticks / freq;
+                                  t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
                                   printf("WARNING: buffer full, sample dropped @ %lu.%06lu\r\n",t_sec_whole,t_sec_frac);
 
                                   pressure_sum = 0;
@@ -416,16 +430,17 @@ void retrieve_pressure_from_buffer_task_create(void) {
                &err);
 }
 
+
 void retrieve_pressure_from_buffer_task(void *p_arg) {
   (void)p_arg;
-
+  static uint32_t cycle_count = 0;  // add this at the top of the function
   RTOS_ERR err;
 
   while (1) {
       // drain circular buffer and printf
       keller_sample_t sample;
       while (keller_buffer_retrieve(&sample)) {
-          char data_array_for_sd_card[80];
+          //char data_array_for_sd_card[80]; // define at top of file and make static char array so doesnt use stack memory, possibly taking 80 bytes every run
 
 //          uint32_t t_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
           uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
@@ -440,12 +455,23 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              t_sec_whole, t_sec_frac);
-          uint32_t write_start = sl_sleeptimer_get_tick_count();
+          //uint32_t write_start = sl_sleeptimer_get_tick_count();
           mod_sd_write_AW(data_array_for_sd_card, len);
-          uint32_t write_end = sl_sleeptimer_get_tick_count();
-          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-          printf("SD W: %lu ms\r\n", write_ms);
+          //uint32_t write_end = sl_sleeptimer_get_tick_count();
+          //uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+          //printf("SD W: %lu ms\r\n", write_ms);
           }
+
+      cycle_count++;
+      if (cycle_count % 100 == 0) {
+          CPU_STK_SIZE stk_free;
+          CPU_STK_SIZE stk_used;
+          RTOS_ERR stk_err;
+          OSTaskStkChk(&print_tcb, &stk_free, &stk_used, &stk_err);
+          printf("Print free: %u used: %u\r\n", stk_free, stk_used);
+          OSTaskStkChk(&keller_tcb, &stk_free, &stk_used, &stk_err);
+          printf("Keller free: %u used: %u\r\n", stk_free, stk_used);
+      }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
@@ -472,11 +498,21 @@ void button_task_create(void) {
 void button_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
-
+//  static uint32_t btn_low_count = 0;
   while (1) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
           mod_sd_close_and_unmount_AW();
       }
+
+//      if (GPIO_PinInGet(gpioPortC, 8) == 0) {
+//          btn_low_count++;
+//          if (btn_low_count >= 5 && mod_sd_is_open_AW()) {
+//              mod_sd_close_and_unmount_AW();
+//              btn_low_count = 0;
+//          }
+//      } else {
+//          btn_low_count = 0;
+//      }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
   }
 }
