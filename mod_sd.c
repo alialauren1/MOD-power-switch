@@ -297,7 +297,7 @@ void mod_sd_close_and_unmount_AW(void) {
 void mod_sd_write_AW(char *buf, int len){
   RTOS_ERR err;
   UINT bw;
-  OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire lock before touching fp, protecting fp so write and close cant overlap
+  OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire sd_mutex lock before touching fp, protecting fp so write and close cant overlap
 
   if(sd_file_open){
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
@@ -315,7 +315,7 @@ void mod_sd_write_AW(char *buf, int len){
           }
       }
   }
-  OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release lock regardless, protecting fp so write and close cant overlap
+  OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release sd_mutex lock, protecting fp so write and close cant overlap
 }
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }

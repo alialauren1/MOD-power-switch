@@ -353,6 +353,9 @@ void keller_get_pressure_task(void *p_arg)
                                   temp_sum = 0;
                                   avg_sample_counter = 0;
                                        }
+//                              pressure_sum = 0;
+//                              temp_sum = 0;
+//                              avg_sample_counter = 0;
 
                           }
                           data_processed = true;
@@ -437,13 +440,13 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
 
   while (1) {
 
-      uint32_t write_start = sl_sleeptimer_get_tick_count();
-      mod_sd_write_AW("1\r\n", 3);   // always write "1", skip the buffer
-      uint32_t write_end = sl_sleeptimer_get_tick_count();
-      uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-      printf("SD W: %lu ms\r\n", write_ms);
+//      uint32_t write_start = sl_sleeptimer_get_tick_count();
+//      mod_sd_write_AW("1\r\n", 3);   // always write "1", skip the buffer
+//      uint32_t write_end = sl_sleeptimer_get_tick_count();
+//      uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+//      printf("SD W: %lu ms\r\n", write_ms);
 
-//       drain circular buffer and printf
+      // drain circular buffer and printf
       keller_sample_t sample;
 
       while (keller_buffer_retrieve(&sample)) {
@@ -460,12 +463,15 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              t_sec_whole, t_sec_frac);
+
           uint32_t write_start = sl_sleeptimer_get_tick_count();
-          // mod_sd_write_AW(data_array_for_sd_card, len);
+          mod_sd_write_AW(data_array_for_sd_card, len);
           uint32_t write_end = sl_sleeptimer_get_tick_count();
           uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-          // printf("SD W: %lu ms\r\n", write_ms);
-          }
+          printf("SD W: %lu ms\r\n", write_ms);
+
+//          printf("%.*s", len, data_array_for_sd_card);   // Just print to serial port
+//          }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
