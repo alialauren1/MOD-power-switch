@@ -61,20 +61,20 @@ typedef enum {
 
 //For Keller_get_pressure_task_create
 #define KELLER_GET_PRESSURE_TASK_PRIO      11u
-#define KELLER_GET_PRESSURE_TASK_STK_SIZE  512u
+#define KELLER_GET_PRESSURE_TASK_STK_SIZE  1024u
 static CPU_STK keller_stk[KELLER_GET_PRESSURE_TASK_STK_SIZE];
 static OS_TCB  keller_tcb;
 
 //For Printing Pressure tasks
 #define PRINT_PRESSURE_TASK_PRIO      13u
-#define PRINT_PRESSURE_TASK_STK_SIZE  512u
+#define PRINT_PRESSURE_TASK_STK_SIZE  1024u
 static CPU_STK print_stk[PRINT_PRESSURE_TASK_STK_SIZE];
 static OS_TCB  print_tcb;
 
-static char data_array_for_sd_card[80]; // define at top of file and make static char array so doesnt use stack memory, possibly taking 80 bytes every run
+static char data_array_for_sd_card[80]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
-#define BUTTON_TASK_PRIO      14u
+#define BUTTON_TASK_PRIO      31u
 #define BUTTON_TASK_STK_SIZE  128u
 static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
 static OS_TCB  button_tcb;
@@ -436,12 +436,18 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
   RTOS_ERR err;
 
   while (1) {
-      // drain circular buffer and printf
-      keller_sample_t sample;
-      while (keller_buffer_retrieve(&sample)) {
-          //char data_array_for_sd_card[80]; // define at top of file and make static char array so doesnt use stack memory, possibly taking 80 bytes every run
 
-//          uint32_t t_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count());
+      uint32_t write_start = sl_sleeptimer_get_tick_count();
+      mod_sd_write_AW("1\r\n", 3);   // always write "1", skip the buffer
+      uint32_t write_end = sl_sleeptimer_get_tick_count();
+      uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+      printf("SD W: %lu ms\r\n", write_ms);
+
+//       drain circular buffer and printf
+      keller_sample_t sample;
+
+      while (keller_buffer_retrieve(&sample)) {
+
           uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
           uint32_t t_sec_whole = sample.t_ticks / freq;
           uint32_t t_sec_frac  = ((uint64_t)(sample.t_ticks % freq) * 1000000) / freq;
@@ -454,11 +460,11 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              t_sec_whole, t_sec_frac);
-//          uint32_t write_start = sl_sleeptimer_get_tick_count();
-          mod_sd_write_AW(data_array_for_sd_card, len);
-//          uint32_t write_end = sl_sleeptimer_get_tick_count();
-//          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-//          printf("SD W: %lu ms\r\n", write_ms);
+          uint32_t write_start = sl_sleeptimer_get_tick_count();
+          // mod_sd_write_AW(data_array_for_sd_card, len);
+          uint32_t write_end = sl_sleeptimer_get_tick_count();
+          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+          // printf("SD W: %lu ms\r\n", write_ms);
           }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);

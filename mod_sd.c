@@ -55,7 +55,7 @@ static volatile FATFS fat_fs;
 static FIL fp;  // AW added
 static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant overlap
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
-static volatile uint8_t sd_write_ok = 0;
+static volatile uint8_t sd_write_prev = 0;
 static void mod_sd_open_AW(void); // AW added, is a forward declaration
 
 static RTOS_ERR err;
@@ -266,7 +266,7 @@ static void mod_sd_open_AW(void){
   if(fres==FR_OK){
       GPIO_PinOutClear(gpioPortH,11); // LED is active low so this drives it low and turns LED on
       sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-      sd_write_ok =1;
+      sd_write_prev =1;
       f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
       f_write(&fp, "Pressure [bar],Temperature [F],time [sec]\r\n", sizeof("Pressure [bar],Temperature [F],time [sec]\r\n") - 1, &bw);
       printf("File created. \r\n");
@@ -281,7 +281,7 @@ void mod_sd_close_and_unmount_AW(void) {
     OSMutexPend(&sd_mutex, 0, OS_OPT_PEND_BLOCKING, NULL, &err); // acquire mutex
 
     if (!sd_file_open) {
-        OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err);
+        OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // protecting fp so write and close cant overlap
         printf("SD card already unmounted.\r\n");
         return;
     }
@@ -297,25 +297,25 @@ void mod_sd_close_and_unmount_AW(void) {
 void mod_sd_write_AW(char *buf, int len){
   RTOS_ERR err;
   UINT bw;
-  OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire lock before touching fp
+  OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire lock before touching fp, protecting fp so write and close cant overlap
 
   if(sd_file_open){
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
       FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
-      if(fres != FR_OK || fsync_res != FR_OK){
-          if(sd_write_ok){
-              sd_write_ok = 0;
+      if(fres != FR_OK || fsync_res != FR_OK){ // if write or flush failed
+          if(sd_write_prev){
+              sd_write_prev = 0; // note that previous write was a failure
               GPIO_PinOutSet(gpioPortH, 11);    // turn LED off, only on transition from ok to failed
               printf("SD write error: %d\r\n", fres);
           }
-      } else {
-          if(!sd_write_ok){
-              sd_write_ok = 1;
+      } else { // write and sync succeeded
+          if(!sd_write_prev){
+              sd_write_prev = 1;                // if previous write was a failure, we need to turn the LED back on since now successful
               GPIO_PinOutClear(gpioPortH, 11);  // turn LED on, only on transition from failed to ok
           }
       }
   }
-  OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release lock regardless
+  OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release lock regardless, protecting fp so write and close cant overlap
 }
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
