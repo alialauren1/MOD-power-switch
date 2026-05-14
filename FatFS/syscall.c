@@ -1,6 +1,11 @@
 /*------------------------------------------------------------------------*/
 /* Sample code of OS dependent controls for FatFs                         */
-/* (C)ChaN, 2014                                                          */
+/* (C)ChaN, 2014
+ *
+ *
+ * TODO:
+ *     fatfs_mutex is a temporary solution, single volume only, would
+ *     probably not work for say second SD card                                              */
 /*------------------------------------------------------------------------*/
 
 
@@ -18,7 +23,7 @@
 
 
 static RTOS_ERR err;
-static OS_MUTEX fatfs_mutex;
+static OS_MUTEX fatfs_mutex; // Workaround Fix: ignore sobj and use this persistent global instead. Single volume only
 
 /*------------------------------------------------------------------------*/
 /* Create a Synchronization Object
