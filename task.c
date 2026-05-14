@@ -206,11 +206,11 @@ void keller_get_pressure_task(void *p_arg)
                   state = STATE_WAIT;
               }
               else if (!trigger_ok) {
-                  printf("ERROR: trigger write failed\r\n");
+//                  printf("ERROR: trigger write failed\r\n");
                   state = STATE_WRITE;
               }
               else {
-                  printf("ERROR: unexpected write state condition\r\n");
+//                  printf("ERROR: unexpected write state condition\r\n");
               }
               break;
           }
@@ -224,13 +224,13 @@ void keller_get_pressure_task(void *p_arg)
                   if (!first_loop && !data_processed) {
                       status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
-                          printf("ERROR: Bad status byte 0x%02X\r\n", status);
+//                          printf("ERROR: Bad status byte 0x%02X\r\n", status);
                       }
                       else if (status & STATUS_BUSY_BIT) {
-                          printf("ERROR: Sensor busy\r\n");
+//                          printf("ERROR: Sensor busy\r\n");
                       }
                       else if (status & STATUS_MEM_ERR_BIT) {
-                          printf("ERROR: Sensor memory error\r\n");
+//                          printf("ERROR: Sensor memory error\r\n");
                       }
                       else {
                           pressure = (uint16_t)((raw[1] << 8) | raw[2]);
@@ -252,7 +252,7 @@ void keller_get_pressure_task(void *p_arg)
                                   freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
                                   t_sec_whole = t_ticks / freq;
                                   t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
-                                  printf("WARNING: buffer full, sample dropped @ %lu.%06lu\r\n",t_sec_whole,t_sec_frac);
+//                                  printf("WARNING: buffer full, sample dropped @ %lu.%06lu\r\n",t_sec_whole,t_sec_frac);
 
                                   pressure_sum = 0;
                                   temp_sum = 0;
@@ -274,7 +274,7 @@ void keller_get_pressure_task(void *p_arg)
                   state = STATE_WAIT;
               }
               else {
-                  printf("ERROR: unexpected wait state condition\r\n");
+//                  printf("ERROR: unexpected wait state condition\r\n");
               }
               break;
           }
@@ -288,11 +288,11 @@ void keller_get_pressure_task(void *p_arg)
                   state = STATE_DELAY;
               }
               else if (!read_ok) {
-                  printf("ERROR: I2C read failed\r\n");
+//                  printf("ERROR: I2C read failed\r\n");
                   state = STATE_READ;
               }
               else {
-                  printf("ERROR: unexpected read state condition\r\n");
+//                  printf("ERROR: unexpected read state condition\r\n");
               }
               break;
           }
@@ -311,7 +311,7 @@ void keller_get_pressure_task(void *p_arg)
                   state = STATE_DELAY;
               }
               else {
-                  printf("ERROR: unexpected delay state condition\r\n");
+//                  printf("ERROR: unexpected delay state condition\r\n");
               }
               break;
           }
