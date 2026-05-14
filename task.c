@@ -370,10 +370,15 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              t_sec_whole, t_sec_frac);
 
           uint32_t write_start = sl_sleeptimer_get_tick_count();
-          mod_sd_write_AW(data_array_for_sd_card, len);
+          bool write_ok = mod_sd_write_AW(data_array_for_sd_card, len);
           uint32_t write_end = sl_sleeptimer_get_tick_count();
           uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+
           printf("SD W: %lu ms\r\n", write_ms);
+
+          if (!write_ok){
+              printf("Write failed for sample \r\n");
+          }
 
 //          printf("%.*s", len, data_array_for_sd_card);   // Just print to serial port
 

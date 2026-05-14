@@ -294,9 +294,10 @@ void mod_sd_close_and_unmount_AW(void) {
     printf("SD card safe to remove.\r\n");
 }
 
-void mod_sd_write_AW(char *buf, int len){
+bool mod_sd_write_AW(char *buf, int len){
   RTOS_ERR err;
   UINT bw;
+  bool successful_write = false;
   OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire sd_mutex lock before touching fp, protecting fp so write and close cant overlap
 
   if(sd_file_open){
@@ -313,9 +314,11 @@ void mod_sd_write_AW(char *buf, int len){
               sd_write_prev = 1;                // if previous write was a failure, we need to turn the LED back on since now successful
               GPIO_PinOutClear(gpioPortH, 11);  // turn LED on, only on transition from failed to ok
           }
+          successful_write=true;
       }
   }
   OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release sd_mutex lock, protecting fp so write and close cant overlap
+  return successful_write;
 }
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
