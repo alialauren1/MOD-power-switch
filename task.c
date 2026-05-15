@@ -356,6 +356,10 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
 
       while (keller_buffer_retrieve(&sample)) {
 
+          if (!mod_sd_is_open_AW()){
+             continue;
+          }
+
           uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
           uint32_t t_sec_whole = sample.t_ticks / freq;
           uint32_t t_sec_frac  = ((uint64_t)(sample.t_ticks % freq) * 1000000) / freq;
