@@ -43,7 +43,8 @@ int ff_cre_syncobj (	/* 1:Function succeeded, 0:Could not create the sync object
 //	*sobj = xSemaphoreCreateMutex();	/* FreeRTOS */
 //	ret = (int)(*sobj != NULL);
 
-	OSMutexCreate(&fatfs_mutex,
+	*sobj = &fatfs_mutex;
+	OSMutexCreate(*sobj,
 	              "FATFS",
 	              &err);
 	ret = (err.Code == RTOS_ERR_NONE ? 1 : 0);
@@ -69,8 +70,7 @@ int ff_del_syncobj (	/* 1:Function succeeded, 0:Could not delete due to any erro
 
 //  vSemaphoreDelete(sobj);		/* FreeRTOS */
 //	ret = 1;
-
-	OSMutexDel(&fatfs_mutex,
+	OSMutexDel(sobj,
 	           OS_OPT_DEL_NO_PEND,
 	           &err);
 	ret = (err.Code == RTOS_ERR_NONE ? 1 : 0);
@@ -95,7 +95,7 @@ int ff_req_grant (	/* 1:Got a grant to access the volume, 0:Could not get a gran
 
 //	ret = (int)(xSemaphoreTake(sobj, _FS_TIMEOUT) == pdTRUE);	/* FreeRTOS */
 
-	OSMutexPend(&fatfs_mutex,
+	OSMutexPend(sobj,
               _FS_TIMEOUT,
               OS_OPT_PEND_BLOCKING,
               DEF_NULL,
@@ -130,7 +130,7 @@ void ff_rel_grant (
 
 //  ret = (int)xSemaphoreGive(sobj);	/* FreeRTOS */
 
-  OSMutexPost(&fatfs_mutex,
+  OSMutexPost(sobj,
               OS_OPT_POST_NONE,
               &err);
   ret = (err.Code == RTOS_ERR_NONE ? 1 : 0);
