@@ -79,6 +79,12 @@ static char data_array_for_sd_card[80]; // define at top of file and make static
 static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
 static OS_TCB  button_tcb;
 
+//For Error Message task
+#define ERR_TASK_PRIO      35u
+#define ERR_TASK_STK_SIZE  128u
+static CPU_STK err_stk[ERR_TASK_STK_SIZE];
+static OS_TCB  err_tcb;
+
 //For Keller_get_pressure_task
 static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
 { // Send a zero-length write to confirm the sensor is on the bus
@@ -129,6 +135,7 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
 void keller_get_pressure_task(void *p_arg); // forward declaration
 void retrieve_pressure_from_buffer_task(void *p_arg); // forward declaration
 void button_task(void *p_arg); // forward declaration
+void err_msg_task(void *p_arg); // forward declaration
 //-------------------------------------------------------------------------------------------------------------
 
 void keller_get_pressure_task_create(void) {
@@ -323,7 +330,7 @@ void retrieve_pressure_from_buffer_task_create(void) {
   RTOS_ERR err;
 
   OSTaskCreate(&retrieve_from_buf_tcb,
-               "Print",
+               "RetrieveFromBuf",
                retrieve_pressure_from_buffer_task,
                NULL,
                RETRIEVE_P_FROM_BUF_TASK_PRIO,
@@ -429,5 +436,31 @@ void button_task(void *p_arg) {
 //          btn_low_count = 0;
 //      }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
+  }
+}
+
+void err_msg_task_create(void) {
+  RTOS_ERR err;
+
+  OSTaskCreate(&err_tcb,
+               "Error",
+               err_msg_task,
+               NULL,
+               ERR_TASK_PRIO,
+               &err_stk[0],
+               (ERR_TASK_STK_SIZE / 10u),
+               ERR_TASK_STK_SIZE,
+               0u,
+               0u,
+               DEF_NULL,
+               OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
+               &err);
+}
+
+void err_msg_task(void *p_arg){
+  (void)p_arg;
+  RTOS_ERR err;
+  while (1) {
+      OSTimeDly(500, OS_OPT_TIME_DLY, &err); // poll every 500ms
   }
 }
