@@ -264,9 +264,8 @@ static void mod_sd_open_AW(void){
 
 
   if(fres==FR_OK){
-      GPIO_PinOutClear(gpioPortH,11); // LED is active low so this drives it low and turns LED on
+      GPIO_PinOutClear(gpioPortH,11); // LED is active low (driving low turns it on)
       sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-      sd_write_prev =1;
       f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
       f_write(&fp, "Pressure [bar],Temperature [F],time [sec]\r\n", sizeof("Pressure [bar],Temperature [F],time [sec]\r\n") - 1, &bw);
       printf("File created. \r\n");
@@ -290,7 +289,8 @@ void mod_sd_close_and_unmount_AW(void) {
     OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // release the lock
     f_close(&fp);
     f_mount(NULL, (TCHAR*)"", 0); // unmount file system
-    GPIO_PinOutSet(gpioPortH, 11);
+    GPIO_PinOutSet(gpioPortH, 11); // turn off LED
+    GPIO_PinOutSet(gpioPortH, 15); // turn off LED
     printf("SD card safe to remove.\r\n");
 }
 
@@ -304,15 +304,16 @@ bool mod_sd_write_AW(char *buf, int len){
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
       FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
       if(fres != FR_OK || fsync_res != FR_OK){ // if write or flush failed
-          if(sd_write_prev){
-              sd_write_prev = 0; // note that previous write was a failure
-              GPIO_PinOutSet(gpioPortH, 11);    // turn LED off, only on transition from ok to failed
+          if(sd_write_prev){ // if prev write successful,
+              sd_write_prev = 0; // note that the new write was a failure
+              GPIO_PinOutSet(gpioPortH, 15);    // turn LED off, only on transition from ok to failed
               printf("SD write error: %d\r\n", fres);
           }
-      } else { // write and sync succeeded
+      }
+      else { // write and sync succeeded
           if(!sd_write_prev){
               sd_write_prev = 1;                // if previous write was a failure, we need to turn the LED back on since now successful
-              GPIO_PinOutClear(gpioPortH, 11);  // turn LED on, only on transition from failed to ok
+              GPIO_PinOutClear(gpioPortH, 15);  // turn LED on, only on transition from failed to ok
           }
           successful_write=true;
       }
@@ -324,7 +325,8 @@ bool mod_sd_write_AW(char *buf, int len){
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
 
 void mod_sd_enable_hardware_AW(void) {
-  GPIO_PinModeSet(gpioPortH, 11, gpioModePushPull, 1); // LED0, active low, starts OFF
+  GPIO_PinModeSet(gpioPortH, 11, gpioModePushPull, 1); // LED, active low, starts OFF
+  GPIO_PinModeSet(gpioPortH, 15, gpioModePushPull, 1); // LED, active low, starts OFF
   GPIO_PinModeSet(gpioPortC, 8, gpioModeInputPull, 1); // BTN0, pull-up so reads high at rest
 }
 

@@ -166,7 +166,7 @@ void keller_get_pressure_task(void *p_arg)
   (void)p_arg;
 
   RTOS_ERR delay_err;
-  OSTimeDlyHMSM(0, 0, 1, 500, OS_OPT_TIME_HMSM_STRICT, &delay_err); // wait for SD card to boot up
+  OSTimeDlyHMSM(0, 0, 5, 500, OS_OPT_TIME_HMSM_STRICT, &delay_err); // wait for SD card to boot up
 
   bool keller_p_sensor_ok = false;
   while(!keller_p_sensor_ok){
