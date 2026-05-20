@@ -39,6 +39,7 @@
 #include "Keller_Pressure_Buffer.h"
 #include <stdlib.h>
 #include "mod_sd.h"
+#include <string.h>
 
 //For Keller_get_pressure_task
 #define SENSOR_I2C_ADDR     0x40
@@ -71,11 +72,15 @@ static OS_TCB  keller_tcb;
 static CPU_STK retrieve_from_buf_stk[RETRIEVE_P_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
 
-static char data_array_for_sd_card[80]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
+#define SD_BATCH_WRITE_SIZE 512
+#define SD_SAMPLES_PER_WRITE 16
+static char sd_batch_write_buf[SD_BATCH_WRITE_SIZE];
+static int sd_batch_sample_count = 0;
+static char data_array_for_sd_card[33]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
 #define BUTTON_TASK_PRIO      31u
-#define BUTTON_TASK_STK_SIZE  128u
+#define BUTTON_TASK_STK_SIZE  512u
 static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
 static OS_TCB  button_tcb;
 
@@ -352,19 +357,13 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
 
   while (1) {
 
-//      uint32_t write_start = sl_sleeptimer_get_tick_count();
-//      mod_sd_write_AW("1\r\n", 3);   // always write "1", skip the buffer
-//      uint32_t write_end = sl_sleeptimer_get_tick_count();
-//      uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-//      printf("SD W: %lu ms\r\n", write_ms);
-
       // drain circular buffer and printf
       keller_sample_t sample;
 
       while (keller_buffer_retrieve(&sample)) {
 
           if (!mod_sd_is_open_AW()){
-             continue;
+             break; // if SD card not open, exit loop
           }
 
           uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
@@ -372,32 +371,48 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
           uint32_t t_sec_frac  = ((uint64_t)(sample.t_ticks % freq) * 1000000) / freq;
 
           int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                             "%s%d.%03d,%d.%02d,%lu.%06lu\r\n",
-                             sample.p_mbar<0 ? "-":"",
+                             "%c%03d.%03d,%03d.%02d,%07lu.%06lu\r\n",
+                             (sample.p_mbar<0 ? '-':' '),
                              (int)(abs(sample.p_mbar) / 1000),
                              (int)(abs(sample.p_mbar) % 1000),
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              t_sec_whole, t_sec_frac);
 
-          uint32_t write_start = sl_sleeptimer_get_tick_count();
-          bool write_ok = mod_sd_write_AW(data_array_for_sd_card, len);
-          uint32_t write_end = sl_sleeptimer_get_tick_count();
-          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+          memcpy(sd_batch_write_buf+(sd_batch_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
+                                                                                              // ^ the addition moves destination pointer forward by bytes already accumulated
+          sd_batch_sample_count++;
 
-          printf("SD W: %lu ms\r\n", write_ms);
-
-          if (!write_ok){
-              printf("Write failed for sample \r\n");
+          if (sd_batch_sample_count >= SD_SAMPLES_PER_WRITE){
+              uint32_t write_start = sl_sleeptimer_get_tick_count();
+              bool write_ok = mod_sd_write_AW(sd_batch_write_buf,sd_batch_sample_count*len);
+              uint32_t write_end = sl_sleeptimer_get_tick_count();
+              uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+              printf("SD W: %lu ms\r\n", write_ms);
+              if (!write_ok){
+                  printf("Write failed for buffer \r\n");
+              }
+              sd_batch_sample_count=0;
           }
-
-//          printf("%.*s", len, data_array_for_sd_card);   // Just print to serial port
-
-          }
+      }
+// Put in when put in button:
+//           uint32_t write_start = sl_sleeptimer_get_tick_count();
+//          bool write_ok = mod_sd_write_AW(data_array_for_sd_card, len);
+//          uint32_t write_end = sl_sleeptimer_get_tick_count();
+//          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
+//          printf("SD W: %lu ms\r\n", write_ms);
+//
+//          if (!write_ok){
+//              printf("Write failed for sample \r\n");
+//          }
+//
+//          }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
 }
+
+
 
 void button_task_create(void) {
   RTOS_ERR err;
@@ -436,6 +451,8 @@ void button_task(void *p_arg) {
 //          btn_low_count = 0;
 //      }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
+
+      // OSTaskDelete put here
   }
 }
 
