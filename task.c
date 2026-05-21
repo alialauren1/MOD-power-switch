@@ -177,7 +177,7 @@ void keller_get_pressure_task(void *p_arg)
       }
   }
 
-  printf("Sensor found at 0x%02X\r\n", SENSOR_I2C_ADDR);
+  printf("\r\nSensor found at 0x%02X\r\n", SENSOR_I2C_ADDR);
 
   bool first_loop = true;
   bool data_processed = false;
@@ -388,7 +388,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
               bool write_ok = mod_sd_write_AW(sd_batch_write_buf,sd_batch_sample_count*len);
               uint32_t write_end = sl_sleeptimer_get_tick_count();
               uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-              printf("SD W: %lu ms\r\n", write_ms);
+//              printf("SD W: %lu ms\r\n", write_ms);
               if (!write_ok){
                   printf("Write failed for buffer \r\n");
               }

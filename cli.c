@@ -420,5 +420,8 @@ void cli_app_init(void)
   status = sl_cli_command_add_command_group(sl_cli_inst_handle, command_group);
   EFM_ASSERT(status);
 
-  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
+//  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
+  printf("\r\n----------------------");
+  printf("\r\nStarted CLI Micrium OS\r\n\r\n");
+
 }
