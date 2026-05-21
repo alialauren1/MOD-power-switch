@@ -48,7 +48,7 @@
 #define STATUS_BUSY_BIT     (1 << 5)  // 1 = sensor still converting
 #define STATUS_MEM_ERR_BIT  (1 << 2)  // 1 = internal checksum failed
 #define P_OFFSET_MBAR 0 // calibration offset
-#define AVG_SAMPLE_COUNT 1 // amount of samples that we use to average before printing
+#define AVG_SAMPLE_COUNT 10 // amount of samples that we use to average before printing
 
 #define SAMPLE_INTERVAL_MS  8
 #define TOTAL_INTERVAL_MS   10

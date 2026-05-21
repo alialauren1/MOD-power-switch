@@ -258,28 +258,37 @@ void mod_sd_create_init_task()
 static void mod_sd_open_AW(void){
   UINT bw;                                   // bw (bytes written) so f_write fills this in after the write
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
-  mod_sd_ff_encode("data_0000.csv", file_name,14); // convert "data.txt" from char to TCHAR for FatFS
+  char name_buf[16];                         // char array for building filename string "data_xxxx.csv"
 
-  FILINFO fno;
-  FRESULT fr = f_stat(file_name,&fno);
-  if (fr == FR_NO_FILE){ // if there is no file already existing, make one
-      FRESULT fres = f_open(&fp, file_name, FA_CREATE_NEW | FA_WRITE); // create file
+  FILINFO fno;                                // FatFS file info struct
 
-      if(fres==FR_OK){
-          GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
-          sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-          f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
-          f_write(&fp, "Pressure [bar],Temperature [F],time [sec]\r\n", sizeof("Pressure [bar],Temperature [F],time [sec]\r\n") - 1, &bw);
-          printf("File created. \r\n");
-      }
-      else {
-          printf("File open has failed: %d\r\n",fres);
-          GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
+  int file_num;
+  for (file_num = 0 ; file_num <= 9999; file_num++){ // find placement to create new file
+      snprintf(name_buf,sizeof(name_buf),"data_%04d.csv",file_num); // build filename string, %04d zero-pads the number
+      mod_sd_ff_encode(name_buf,file_name,strlen(name_buf)); // convert string from char to TCHAR for FatFS
+      FRESULT fr = f_stat(file_name,&fno);
+      if(fr==FR_NO_FILE){
+          break; // found placement to create new file, exit loop with file_num being set to that number
       }
   }
+
+  if(file_num>9999){
+      printf("SD error:max file count has been reached \r\n");
+      GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
+      return;
+  }
+
+  FRESULT fres = f_open(&fp, file_name, FA_CREATE_NEW | FA_WRITE); // create file
+
+  if(fres==FR_OK){
+            GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
+            sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
+            f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
+            f_write(&fp, "Pressure [bar],Temperature [F],time [sec]\r\n", sizeof("Pressure [bar],Temperature [F],time [sec]\r\n") - 1, &bw);
+            printf("File created: %s \r\n", name_buf);
+  }
   else {
-      // put make new file in here since the file already exists
-      printf("data_0000.csv already exists. \r\n");
+      printf("File open has failed: %d\r\n",fres);
       GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
 }
