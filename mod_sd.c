@@ -57,6 +57,7 @@ static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant o
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
 static volatile uint8_t sd_write_prev = 0;
 static void mod_sd_open_AW(void); // AW added, is a forward declaration
+void mod_sd_seed_rtc_AW(void);
 
 static RTOS_ERR err;
 //static FIL fp;
@@ -185,7 +186,7 @@ void mod_sd_init_task()
   volatile FRESULT res;
 
   mod_sd_enable_hardware_AW();
-//  mod_sd_enable_hardware();
+  mod_sd_seed_rtc_AW();
 
   MICROSD_Init();
 
@@ -349,4 +350,33 @@ void mod_sd_enable_hardware_AW(void) {
   GPIO_PinModeSet(gpioPortC, 8, gpioModeInputPull, 1); // BTN0, pull-up so reads high at rest
 }
 
+void mod_sd_seed_rtc_AW(void){
+
+  // __DATE__ is string with "Month Day Year" where the month is a 3-letter abbreviation
+  // we're searching string to find the month index that matches
+  static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
+  uint8_t month = 0;
+  for (int i=0;i<12;i++){
+      if (strncmp(__DATE__, months+i*3,3)==0){month=i;break;}
+  }
+
+  sl_sleeptimer_date_t date;
+  sl_sleeptimer_build_datetime(
+      &date,
+
+      // __DATE__ is [Month abbrev.][Day][Year]=[0..2][4..5][7..10] with spaces in between
+      (__DATE__[7]-'0')*1000 + (__DATE__[8]-'0')*100 +
+      (__DATE__[9]-'0')*10   + (__DATE__[10]-'0'),                        // year
+      (sl_sleeptimer_month_t)month,
+      (__DATE__[4]==' ' ? 0 : (__DATE__[4]-'0'))*10 + (__DATE__[5]-'0'), // day
+
+      // __TIME__ is "HH:MM:SS", colons are at [2] and [5]
+      (__TIME__[0]-'0')*10 + (__TIME__[1]-'0'),  // hour
+      (__TIME__[3]-'0')*10 + (__TIME__[4]-'0'),  // minute
+      (__TIME__[6]-'0')*10 + (__TIME__[7]-'0'),  // second
+      0 // timezone offset
+      );
+  sl_sleeptimer_set_datetime(&date);  // seed the MCU clock with the build time
+
+}
 
