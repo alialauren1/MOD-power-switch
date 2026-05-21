@@ -29,6 +29,7 @@
 #include "os.h"
 
 #include "mod_sd.h"
+#include "sl_sleeptimer.h"
 
 /*******************************************************************************
  *******************************   DEFINES   ***********************************
@@ -51,6 +52,7 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments);
 //void sd_info_cmd(sl_cli_command_arg_t *arguments);
 
 void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments);
+void sd_set_time_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -110,6 +112,12 @@ static const sl_cli_command_info_t cmd__sd_close_unmount = \
                  "",
                  { SL_CLI_ARG_END, });
 
+static const sl_cli_command_info_t cmd__sd_set_time = \
+  SL_CLI_COMMAND(sd_set_time_cmd,
+                 "set time in the form of:",
+                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day" SL_CLI_UNIT_SEPARATOR "hour" SL_CLI_UNIT_SEPARATOR "min" SL_CLI_UNIT_SEPARATOR "sec",
+                 { SL_CLI_ARG_UINT16, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_END, });
+
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
   { "echo_int", &cmd__echoint, false },
@@ -120,6 +128,7 @@ static sl_cli_command_entry_t a_table[] = {
   { "sd_read", &cmd__sd_read, false },
 //  { "sd_info", &cmd__sd_info, false },
   { "sd_close_unmount", &cmd__sd_close_unmount, false },
+  { "set_time", &cmd__sd_set_time, false },
   { NULL, NULL, false },
 };
 
@@ -403,6 +412,30 @@ void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments)
 {
   (void)arguments; // must accept as param but no need to use
   mod_sd_close_and_unmount_AW();
+}
+
+/****************************************************************************//**
+ * Callback for sd_set_time_cmd
+ *
+ * The command is used to set the time.
+ ******************************************************************************/
+void sd_set_time_cmd(sl_cli_command_arg_t *arguments){
+  if (sl_cli_get_argument_count(arguments)<6){
+      printf("usage: set_time YYYY MM DD HH MM SS\r\n");
+      printf("ex:    set_time 2000 12 25 12 30 01\r\n");
+      return;
+  }
+  uint16_t year = sl_cli_get_argument_uint16(arguments, 0);
+  uint8_t  month = sl_cli_get_argument_uint8(arguments, 1);
+  uint8_t  day   = sl_cli_get_argument_uint8(arguments, 2);
+  uint8_t  hour  = sl_cli_get_argument_uint8(arguments, 3);
+  uint8_t  min   = sl_cli_get_argument_uint8(arguments, 4);
+  uint8_t  sec   = sl_cli_get_argument_uint8(arguments, 5);
+
+  sl_sleeptimer_date_t date;
+  sl_sleeptimer_build_datetime(&date,year,(sl_sleeptimer_month_t)(month-1),day,hour,min,sec,0);
+  sl_sleeptimer_set_datetime(&date);
+  printf("Time set: %04u-%02u-%02u %02u:%02u:%02u\r\n", year, month, day, hour, min, sec);
 }
 
 
