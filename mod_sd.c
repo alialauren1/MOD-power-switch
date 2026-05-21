@@ -258,20 +258,29 @@ void mod_sd_create_init_task()
 static void mod_sd_open_AW(void){
   UINT bw;                                   // bw (bytes written) so f_write fills this in after the write
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
-  mod_sd_ff_encode("data.csv", file_name,8); // convert "data.txt" from char to TCHAR for FatFS
+  mod_sd_ff_encode("data_0000.csv", file_name,14); // convert "data.txt" from char to TCHAR for FatFS
 
-  FRESULT fres = f_open(&fp, file_name, FA_CREATE_ALWAYS | FA_WRITE); // create file, FA_CREATE_ALWAYS truncates if it already exists
+  FILINFO fno;
+  FRESULT fr = f_stat(file_name,&fno);
+  if (fr == FR_NO_FILE){ // if there is no file already existing, make one
+      FRESULT fres = f_open(&fp, file_name, FA_CREATE_NEW | FA_WRITE); // create file
 
-
-  if(fres==FR_OK){
-      GPIO_PinOutClear(gpioPortH,11); // LED is active low (driving low turns it on)
-      sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-      f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
-      f_write(&fp, "Pressure [bar],Temperature [F],time [sec]\r\n", sizeof("Pressure [bar],Temperature [F],time [sec]\r\n") - 1, &bw);
-      printf("File created. \r\n");
+      if(fres==FR_OK){
+          GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
+          sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
+          f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
+          f_write(&fp, "Pressure [bar],Temperature [F],time [sec]\r\n", sizeof("Pressure [bar],Temperature [F],time [sec]\r\n") - 1, &bw);
+          printf("File created. \r\n");
+      }
+      else {
+          printf("File open has failed: %d\r\n",fres);
+          GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
+      }
   }
   else {
-      printf("File open has failed: %d\r\n",fres);
+      // put make new file in here since the file already exists
+      printf("data_0000.csv already exists. \r\n");
+      GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
 }
 
@@ -326,6 +335,7 @@ uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
 
 void mod_sd_enable_hardware_AW(void) {
   GPIO_PinModeSet(gpioPortH, 11, gpioModePushPull, 1); // LED, active low, starts OFF
+  GPIO_PinModeSet(gpioPortH, 10, gpioModePushPull, 1); // LED, active low, starts OFF
   GPIO_PinModeSet(gpioPortH, 15, gpioModePushPull, 1); // LED, active low, starts OFF
   GPIO_PinModeSet(gpioPortC, 8, gpioModeInputPull, 1); // BTN0, pull-up so reads high at rest
 }
