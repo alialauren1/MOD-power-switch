@@ -177,7 +177,7 @@ void keller_get_pressure_task(void *p_arg)
       }
   }
 
-  printf("\r\nSensor found at 0x%02X\r\n", SENSOR_I2C_ADDR);
+  printf("Sensor found at 0x%02X\r\n", SENSOR_I2C_ADDR);
 
   bool first_loop = true;
   bool data_processed = false;

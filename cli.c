@@ -114,7 +114,7 @@ static const sl_cli_command_info_t cmd__sd_close_unmount = \
 
 static const sl_cli_command_info_t cmd__sd_set_time = \
   SL_CLI_COMMAND(sd_set_time_cmd,
-                 "set time in the form of:",
+                 "set time for current sd card data run in the form of:",
                  "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day" SL_CLI_UNIT_SEPARATOR "hour" SL_CLI_UNIT_SEPARATOR "min" SL_CLI_UNIT_SEPARATOR "sec",
                  { SL_CLI_ARG_UINT16, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_END, });
 
@@ -454,7 +454,14 @@ void cli_app_init(void)
   EFM_ASSERT(status);
 
 //  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
-  printf("\r\n----------------------");
-  printf("\r\nStarted CLI Micrium OS\r\n\r\n");
+  printf("\r\n---------------------------------");
+  printf("\r\n---------------------------------");
+  printf("\r\nStarted CLI Micrium OS\r\n");
 
+  printf("Useful CLI Options:\r\n");
+  printf("- set_time to set the time of the sd card\r\n");
+  printf("- sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
+
+  printf("Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("---------------------------------\r\n");
 }
