@@ -58,6 +58,7 @@ static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1
 static volatile uint8_t sd_write_prev = 0;
 static void mod_sd_open_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
+static char name_buf[16];                  // char array for building filename string "data_xxxx.csv"
 
 static RTOS_ERR err;
 //static FIL fp;
@@ -259,8 +260,6 @@ void mod_sd_create_init_task()
 static void mod_sd_open_AW(void){
   UINT bw;                                   // bw (bytes written) so f_write fills this in after the write
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
-  char name_buf[16];                         // char array for building filename string "data_xxxx.csv"
-
   FILINFO fno;                                // FatFS file info struct
 
   int file_num;
@@ -351,32 +350,32 @@ void mod_sd_enable_hardware_AW(void) {
 }
 
 void mod_sd_seed_rtc_AW(void){
-
-  // __DATE__ is string with "Month Day Year" where the month is a 3-letter abbreviation
-  // we're searching string to find the month index that matches
-  static const char months[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
-  uint8_t month = 0;
-  for (int i=0;i<12;i++){
-      if (strncmp(__DATE__, months+i*3,3)==0){month=i;break;}
-  }
-
   sl_sleeptimer_date_t date;
-  sl_sleeptimer_build_datetime(
-      &date,
+  sl_sleeptimer_build_datetime(&date,1980,MONTH_JANUARY,1,0,0,0,0);
+  sl_sleeptimer_set_datetime(&date);  // seed the MCU clock with the default time
+}
 
-      // __DATE__ is [Month abbrev.][Day][Year]=[0..2][4..5][7..10] with spaces in between
-      (__DATE__[7]-'0')*1000 + (__DATE__[8]-'0')*100 +
-      (__DATE__[9]-'0')*10   + (__DATE__[10]-'0'),                        // year
-      (sl_sleeptimer_month_t)month,
-      (__DATE__[4]==' ' ? 0 : (__DATE__[4]-'0'))*10 + (__DATE__[5]-'0'), // day
+const char* mod_sd_get_filename_AW(void) {return name_buf;} // returns name of file open on sd card
 
-      // __TIME__ is "HH:MM:SS", colons are at [2] and [5]
-      (__TIME__[0]-'0')*10 + (__TIME__[1]-'0'),  // hour
-      (__TIME__[3]-'0')*10 + (__TIME__[4]-'0'),  // minute
-      (__TIME__[6]-'0')*10 + (__TIME__[7]-'0'),  // second
-      0 // timezone offset
-      );
-  sl_sleeptimer_set_datetime(&date);  // seed the MCU clock with the build time
+void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t min, uint8_t sec){
+  FIL log_fp;
+  UINT bw;
+  char log_buf[64];
+  uint32_t ticks = sl_sleeptimer_get_tick_count(); // tick count at moment set_time was installed
 
+  TCHAR log_file_name[16];
+  mod_sd_ff_encode("time_log.csv",log_file_name, strlen("time_log.csv"));
+  FRESULT fres = f_open(&log_fp,log_file_name, FA_OPEN_ALWAYS | FA_WRITE); // create time log file if doesnt already exist
+  if (fres==FR_OK){
+      if (f_size(&log_fp)==0){ // if file header doesnt already exist, make it
+          f_write(&log_fp, "data_file,real_world_time,ticks_at_set_time\r\n",strlen("data_file,real_world_time,ticks_at_set_time\r\n"), &bw);
+      }
+
+      f_lseek(&log_fp,f_size(&log_fp)); // seek to end so new entries are appended and not verwitten
+
+      snprintf(log_buf,sizeof(log_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%lu\r\n",mod_sd_get_filename_AW(), year, month, day, hour, min, sec, ticks);
+      f_write(&log_fp,log_buf,strlen(log_buf),&bw);
+      f_close(&log_fp);
+  }
 }
 

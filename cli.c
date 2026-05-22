@@ -445,6 +445,7 @@ void sd_set_time_cmd(sl_cli_command_arg_t *arguments){
   sl_sleeptimer_build_datetime(&date,year,(sl_sleeptimer_month_t)(month-1),day,hour,min,sec,0);
   sl_sleeptimer_set_datetime(&date);
   printf("Time set: %04u-%02u-%02u %02u:%02u:%02u\r\n", year, month, day, hour, min, sec);
+  mod_sd_log_set_time_AW(year, month, day, hour, min, sec);
 }
 
 /****************************************************************************//**
@@ -490,8 +491,8 @@ void cli_app_init(void)
   printf("- get_time to get the current system time\r\n");
   printf("- sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
 
-  printf("Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n\r\n");
-
-  printf("Recommend: use set_time to update SD card time:\r\n");
+  printf("Instructions:\r\n");
+  printf("1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("2. Use set_time to document time during data collection\r\n");
   printf("---------------------------------\r\n");
 }

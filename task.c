@@ -48,7 +48,7 @@
 #define STATUS_BUSY_BIT     (1 << 5)  // 1 = sensor still converting
 #define STATUS_MEM_ERR_BIT  (1 << 2)  // 1 = internal checksum failed
 #define P_OFFSET_MBAR 0 // calibration offset
-#define AVG_SAMPLE_COUNT 10 // amount of samples that we use to average before printing
+#define AVG_SAMPLE_COUNT 100 // amount of samples that we use to average before printing
 
 #define SAMPLE_INTERVAL_MS  8
 #define TOTAL_INTERVAL_MS   10
@@ -185,7 +185,7 @@ void keller_get_pressure_task(void *p_arg)
   int32_t temp_sum = 0;
   int avg_sample_counter = 0;
   uint8_t raw[5];
-  uint32_t t_ticks = 0;
+  uint64_t t_ticks = 0;
   uint32_t cycle_start = 0;
   uint32_t time_after_trigger = 0;
   uint32_t sample_interval_ticks = sl_sleeptimer_ms_to_tick(SAMPLE_INTERVAL_MS);

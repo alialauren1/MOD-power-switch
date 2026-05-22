@@ -20,7 +20,7 @@ void keller_buffer_init(void) {
     count = 0; // how many samples in buffer
 }
 
-bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint32_t t_ticks) { // writes to buffer[write_index] and appends write_index by 1
+bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks) { // writes to buffer[write_index] and appends write_index by 1
     CORE_DECLARE_IRQ_STATE; // declares saved interrupt state variable
 
     // Atomic check if buffer is full
