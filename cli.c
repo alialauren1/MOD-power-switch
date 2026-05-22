@@ -53,6 +53,7 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments);
 
 void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments);
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments);
+void get_time_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -118,6 +119,13 @@ static const sl_cli_command_info_t cmd__sd_set_time = \
                  "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day" SL_CLI_UNIT_SEPARATOR "hour" SL_CLI_UNIT_SEPARATOR "min" SL_CLI_UNIT_SEPARATOR "sec",
                  { SL_CLI_ARG_UINT16, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_END, });
 
+static const sl_cli_command_info_t cmd__get_time = \
+  SL_CLI_COMMAND(get_time_cmd,
+                 "get current system time",
+                 " ",
+                 { SL_CLI_ARG_END });
+
+
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
   { "echo_int", &cmd__echoint, false },
@@ -129,6 +137,7 @@ static sl_cli_command_entry_t a_table[] = {
 //  { "sd_info", &cmd__sd_info, false },
   { "sd_close_unmount", &cmd__sd_close_unmount, false },
   { "set_time", &cmd__sd_set_time, false },
+  { "get_time", &cmd__get_time, false },
   { NULL, NULL, false },
 };
 
@@ -438,6 +447,24 @@ void sd_set_time_cmd(sl_cli_command_arg_t *arguments){
   printf("Time set: %04u-%02u-%02u %02u:%02u:%02u\r\n", year, month, day, hour, min, sec);
 }
 
+/****************************************************************************//**
+ * Callback for sd_sget_time_cmd
+ *
+ * The command is used to get the time of sd card.
+ ******************************************************************************/
+void get_time_cmd(sl_cli_command_arg_t *arguments){
+  (void)arguments;
+  sl_sleeptimer_date_t date;
+  sl_sleeptimer_get_datetime(&date);
+  printf("Current time: %04u-%02u-%02u %02u:%02u:%02u\r\n",
+         date.year + 1900,
+         date.month + 1,
+         date.month_day,
+         date.hour,
+         date.min,
+         date.sec);
+}
+
 
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
@@ -454,14 +481,17 @@ void cli_app_init(void)
   EFM_ASSERT(status);
 
 //  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
-  printf("\r\n---------------------------------");
-  printf("\r\n---------------------------------");
-  printf("\r\nStarted CLI Micrium OS\r\n");
+  printf("---------------------------------\r\n");
+  printf("---------------------------------\r\n");
+  printf("Started CLI Micrium OS\r\n");
 
   printf("Useful CLI Options:\r\n");
   printf("- set_time to set the time of the sd card\r\n");
+  printf("- get_time to get the current system time\r\n");
   printf("- sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
 
-  printf("Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n\r\n");
+
+  printf("Recommend: use set_time to update SD card time:\r\n");
   printf("---------------------------------\r\n");
 }
