@@ -41,7 +41,7 @@
 #include "mod_sd.h"
 #include <string.h>
 
-//For Keller_get_pressure_task
+//For Keller_get_pressure_taskd
 #define SENSOR_I2C_ADDR     0x40
 //#define SAMPLE_INTERVAL_MS  9         // use min 8ms — satisfies 8ms minimum conversion time
 #define STATUS_FIXED_BIT    (1 << 6)  // always 1 on real Keller sensor
@@ -73,10 +73,10 @@ static CPU_STK retrieve_from_buf_stk[RETRIEVE_P_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
 
 #define SD_BATCH_WRITE_SIZE 512
-#define SD_SAMPLES_PER_WRITE 16
+#define SD_SAMPLES_PER_WRITE 15
 static char sd_batch_write_buf[SD_BATCH_WRITE_SIZE];
 static int sd_batch_sample_count = 0;
-static char data_array_for_sd_card[33]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
+static char data_array_for_sd_card[34]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
 #define BUTTON_TASK_PRIO      31u
@@ -200,8 +200,8 @@ void keller_get_pressure_task(void *p_arg)
   int32_t t_centi = 0;
 
   uint32_t freq = 0;
-  uint32_t t_sec_whole = 0;
-  uint32_t t_sec_frac  = 0;
+  uint64_t t_sec_whole = 0;
+  uint64_t t_sec_frac  = 0;
 
   keller_buffer_init();
 
@@ -229,10 +229,10 @@ void keller_get_pressure_task(void *p_arg)
 
           case STATE_WAIT: {
               uint32_t now = sl_sleeptimer_get_tick_count();
-              if (now >= time_after_trigger + sample_interval_ticks) {
+              if ((uint32_t)(now - time_after_trigger) >= sample_interval_ticks) {
                   state = STATE_READ;
               }
-              else if (now < time_after_trigger + sample_interval_ticks) {
+              else if ((uint32_t)(now - time_after_trigger) < sample_interval_ticks) {
                   if (!first_loop && !data_processed) {
                       status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
@@ -264,7 +264,10 @@ void keller_get_pressure_task(void *p_arg)
                                   freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
                                   t_sec_whole = t_ticks / freq;
                                   t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
-                                  printf("WARNING: buffer full, sample dropped @ %lu.%06lu\r\n",t_sec_whole,t_sec_frac);
+                                  printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
+                                         (uint32_t)(t_sec_whole / 1000000),
+                                         (uint32_t)(t_sec_whole % 1000000),
+                                         (uint32_t)t_sec_frac);
 
                                   pressure_sum = 0;
                                   temp_sum = 0;
@@ -279,7 +282,7 @@ void keller_get_pressure_task(void *p_arg)
                       }
                   }
                   RTOS_ERR yield_err;
-                  uint32_t remaining = (cycle_start + sample_interval_ticks) - now;
+                  uint32_t remaining = sample_interval_ticks - (uint32_t)(now - time_after_trigger);
                   uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
                   if (remaining_ms < 1) remaining_ms = 1;
                   OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
@@ -293,7 +296,7 @@ void keller_get_pressure_task(void *p_arg)
 
           case STATE_READ: {
               bool read_ok = keller_p_sensor_read(raw, sizeof(raw));
-              t_ticks = sl_sleeptimer_get_tick_count();
+              t_ticks = sl_sleeptimer_get_tick_count64();
               if (read_ok) {
                   first_loop = false;
                   data_processed = false;
@@ -311,12 +314,12 @@ void keller_get_pressure_task(void *p_arg)
 
           case STATE_DELAY: {
               uint32_t now = sl_sleeptimer_get_tick_count();
-              if (now >= cycle_start + total_interval_ticks) {
+              if ((uint32_t)(now - cycle_start) >= total_interval_ticks) {
                   state = STATE_WRITE;
               }
-              else if (now < cycle_start + total_interval_ticks) {
+              else if ((uint32_t)(now - cycle_start) < total_interval_ticks) {
                   RTOS_ERR yield_err;
-                  uint32_t remaining = (cycle_start + total_interval_ticks) - now;
+                  uint32_t remaining = total_interval_ticks - (uint32_t)(now - cycle_start);
                   uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
                   if (remaining_ms < 1) remaining_ms = 1;
                   OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
@@ -367,17 +370,19 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
           }
 
           uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
-          uint32_t t_sec_whole = sample.t_ticks / freq;
-          uint32_t t_sec_frac  = ((uint64_t)(sample.t_ticks % freq) * 1000000) / freq;
+          uint64_t t_sec_whole = sample.t_ticks / freq;
+          uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
           int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                             "%c%03d.%03d,%03d.%02d,%07lu.%06lu\r\n",
+                             "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu\r\n",
                              (sample.p_mbar<0 ? '-':' '),
                              (int)(abs(sample.p_mbar) / 1000),
                              (int)(abs(sample.p_mbar) % 1000),
                              (int)((sample.t_centi * 9 / 5 + 3200) / 100),
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
-                             t_sec_whole, t_sec_frac);
+                             (uint32_t)(t_sec_whole / 1000000),
+                             (uint32_t)(t_sec_whole % 1000000),
+                             (uint32_t)t_sec_frac);
 
           memcpy(sd_batch_write_buf+(sd_batch_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
                                                                                               // ^ the addition moves destination pointer forward by bytes already accumulated
