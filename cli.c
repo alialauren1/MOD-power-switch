@@ -54,6 +54,7 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments);
 void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments);
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments);
 void get_time_cmd(sl_cli_command_arg_t *arguments);
+void get_open_file_name_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -125,6 +126,11 @@ static const sl_cli_command_info_t cmd__get_time = \
                  " ",
                  { SL_CLI_ARG_END });
 
+static const sl_cli_command_info_t cmd__get_open_file_name_cmd = \
+  SL_CLI_COMMAND(get_open_file_name_cmd,
+                 "get name of SD file being written to",
+                 " ",
+                 { SL_CLI_ARG_END });
 
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
@@ -138,6 +144,7 @@ static sl_cli_command_entry_t a_table[] = {
   { "sd_close_unmount", &cmd__sd_close_unmount, false },
   { "set_time", &cmd__sd_set_time, false },
   { "get_time", &cmd__get_time, false },
+  { "get_file_name", &cmd__get_open_file_name_cmd, false },
   { NULL, NULL, false },
 };
 
@@ -449,7 +456,7 @@ void sd_set_time_cmd(sl_cli_command_arg_t *arguments){
 }
 
 /****************************************************************************//**
- * Callback for sd_sget_time_cmd
+ * Callback for sd_get_time_cmd
  *
  * The command is used to get the time of sd card.
  ******************************************************************************/
@@ -466,7 +473,20 @@ void get_time_cmd(sl_cli_command_arg_t *arguments){
          date.sec);
 }
 
-
+/****************************************************************************//**
+ * Callback for get_open_file_name_cmd
+ *
+ * The command is used to get the name of the file that is open.
+ ******************************************************************************/
+void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
+  (void)arguments;
+  if (mod_sd_is_open_AW()){
+      printf("Writing to: %s\r\n", mod_sd_get_filename_AW());
+  }
+  else {
+      printf("No file is open");
+  }
+}
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
  ******************************************************************************/
