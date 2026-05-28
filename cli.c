@@ -509,6 +509,7 @@ void cli_app_init(void)
   printf("Useful CLI Options:\r\n");
   printf("- set_time to set the time of the sd card\r\n");
   printf("- get_time to get the current system time\r\n");
+  printf("- get_file_name to see what file we are writing to\r\n");
   printf("- sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
 
   printf("Instructions:\r\n");
