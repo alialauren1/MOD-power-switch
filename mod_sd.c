@@ -41,6 +41,8 @@
 //#include <stdalign.h>
 #include "microsd.h"
 
+#define SD_FILE_MAX_SIZE (5*1024*1024) // Keep units in bytes
+
 //TaskHandle_t mod_sd_init_task_handle;
 //TaskHandle_t mod_sd_cmd_task_handle;
 OS_TCB mod_sd_init_task_handle;
@@ -321,6 +323,7 @@ bool mod_sd_write_AW(char *buf, int len){
   if(sd_file_open){
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
       FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
+
       if(fres != FR_OK || fsync_res != FR_OK){ // if write or flush failed
           if(sd_write_prev){ // if prev write successful,
               sd_write_prev = 0; // note that the new write was a failure
@@ -329,6 +332,12 @@ bool mod_sd_write_AW(char *buf, int len){
           }
       }
       else { // write and sync succeeded
+          if (f_size(&fp)>= SD_FILE_MAX_SIZE){
+                        f_close(&fp);
+                        sd_file_open = 0;
+                        mod_sd_open_AW(); // find next file name and open it
+                        printf("File size limit reached, opened: %s\r\n", name_buf);
+                    }
           if(!sd_write_prev){
               sd_write_prev = 1;                // if previous write was a failure, we need to turn the LED back on since now successful
               GPIO_PinOutClear(gpioPortH, 15);  // turn LED on, only on transition from failed to ok
