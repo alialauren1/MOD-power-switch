@@ -175,6 +175,7 @@ SECTIONS
   {
     . = ALIGN(4);
     __bss_start__ = .;
+    *(SEGGER_RTT)
     *(.bss*)
     *(COMMON)
     . = ALIGN(4);

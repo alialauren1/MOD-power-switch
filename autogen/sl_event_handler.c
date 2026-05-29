@@ -13,6 +13,8 @@
 #include "sl_sleeptimer.h"
 #include "sl_i2cspm_instances.h"
 #include "sl_iostream_init_usart_instances.h"
+#include "SEGGER_SYSVIEW.h"
+#include "sl_cli_instances.h"
 #include "cpu.h"
 #include "cmsis_os2.h"
 #include "sl_iostream_init_instances.h"
@@ -29,6 +31,7 @@ void sl_platform_init(void)
   sl_device_init_clocks();
   sl_device_init_emu();
   sl_board_init();
+  SEGGER_SYSVIEW_Conf();
   CPU_Init();
   osKernelInitialize();
 }
@@ -48,6 +51,7 @@ void sl_service_init(void)
   sl_board_configure_vcom();
   sl_sleeptimer_init();
   sl_iostream_init_instances();
+  sl_cli_instances_init();
 }
 
 void sl_stack_init(void)

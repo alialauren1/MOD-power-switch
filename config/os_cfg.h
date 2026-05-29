@@ -62,7 +62,7 @@
 // <q OS_CFG_DBG_EN> Add debug helper code and variable
 // <i> Enable debug helper code and variables.
 // <i> Default: 0
-#define  OS_CFG_DBG_EN                                      0
+#define  OS_CFG_DBG_EN                                      1
 
 // <q OS_CFG_TICK_EN> Enable ticks support
 // <i> Enable or disable support for ticks (Delay functions, pend with timeouts, etc).

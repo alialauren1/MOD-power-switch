@@ -40,7 +40,7 @@ int main(void)
 #else // SL_CATALOG_KERNEL_PRESENT
   while (1) {
 
-    sl_system_process_action(); //dont remove, silicon labs components process action routine, must be called from super loop
+    sl_system_process_action(); // don't remove, silicon labs components process action routine, must be called from super loop
 
 
 #if defined(SL_CATALOG_POWER_MANAGER_PRESENT)

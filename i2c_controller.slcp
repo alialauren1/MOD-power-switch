@@ -25,6 +25,9 @@ toolchain_settings: []
 component:
 - {id: EFM32GG11B820F2048GL192}
 - {id: brd2204c}
+- instance: [inst]
+  id: cli
+- {id: cli_core}
 - {id: device_init}
 - {id: device_init_lfrco}
 - instance: [sensor]
@@ -33,6 +36,7 @@ component:
 - instance: [vcom]
   id: iostream_usart
 - {id: micriumos_kernel}
+- {id: segger_systemview}
 - {id: sl_system}
 - {id: sleeptimer}
 define:
