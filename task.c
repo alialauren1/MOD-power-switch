@@ -78,6 +78,8 @@ static OS_TCB  retrieve_from_buf_tcb;
 #define SD_SAMPLES_PER_WRITE 15
 static char sd_batch_write_buf[SD_BATCH_WRITE_SIZE];
 static int sd_batch_sample_count = 0;
+static int sd_bytes_merged = 0;
+static int sd_batch_fully_dumped = 0;
 static char data_array_for_sd_card[34]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
@@ -255,8 +257,8 @@ void keller_get_pressure_task(void *p_arg)
                           pressure_sum += p_mbar;
                           temp_sum += t_centi;
                           avg_sample_counter++;
-                          if (avg_sample_counter == (AVG_SAMPLE_COUNT+1)/2){ // integer division truncates so the +1 protects result if sample count is 1
-                               t_ticks_mid = t_ticks; // store the time halfway through the averaging of samples
+                          if (avg_sample_counter == (AVG_SAMPLE_COUNT+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
+                               t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
                           }
                           if (avg_sample_counter == AVG_SAMPLE_COUNT) {
                               if (keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
@@ -264,7 +266,7 @@ void keller_get_pressure_task(void *p_arg)
                                                   t_ticks_mid)){
                               }
                               else {
-                                  freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
+                                  freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
                                   t_sec_whole = t_ticks / freq;
                                   t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
                                   printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
@@ -368,7 +370,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
              break; // if SD card not open, exit loop
           }
 
-          uint32_t freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
+          uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
           uint64_t t_sec_whole = sample.t_ticks / freq;
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
@@ -386,6 +388,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
           memcpy(sd_batch_write_buf+(sd_batch_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
                                                                                               // ^ the addition moves destination pointer forward by bytes already accumulated
           sd_batch_sample_count++;
+          sd_bytes_merged += len; // bytes written to data_array_for_sd_card
 
           if (sd_batch_sample_count >= SD_SAMPLES_PER_WRITE){
               uint32_t write_start = sl_sleeptimer_get_tick_count();
@@ -397,26 +400,24 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                   printf("Write failed for buffer \r\n");
               }
               sd_batch_sample_count=0;
+              sd_bytes_merged = 0;
           }
       }
-// Put in when put in button:
-//           uint32_t write_start = sl_sleeptimer_get_tick_count();
-//          bool write_ok = mod_sd_write_AW(data_array_for_sd_card, len);
-//          uint32_t write_end = sl_sleeptimer_get_tick_count();
-//          uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-//          printf("SD W: %lu ms\r\n", write_ms);
-//
-//          if (!write_ok){
-//              printf("Write failed for sample \r\n");
-//          }
-//
-//          }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
 }
 
-
+static void flush_sd_before_close(void){
+  if (sd_batch_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
+      mod_sd_write_AW(sd_batch_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
+      sd_batch_sample_count=0;
+      sd_bytes_merged = 0;
+  }
+  else{
+      printf("No flush of data to sd card needed\r\n");
+  }
+}
 
 void button_task_create(void) {
   RTOS_ERR err;
@@ -439,21 +440,11 @@ void button_task_create(void) {
 void button_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
-//  static uint32_t btn_low_count = 0;
   while (1) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
+          flush_sd_before_close();
           mod_sd_close_and_unmount_AW();
       }
-
-//      if (GPIO_PinInGet(gpioPortC, 8) == 0) {
-//          btn_low_count++;
-//          if (btn_low_count >= 5 && mod_sd_is_open_AW()) {
-//              mod_sd_close_and_unmount_AW();
-//              btn_low_count = 0;
-//          }
-//      } else {
-//          btn_low_count = 0;
-//      }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
 
       // OSTaskDelete put here
