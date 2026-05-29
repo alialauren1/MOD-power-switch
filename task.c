@@ -48,10 +48,12 @@
 #define STATUS_BUSY_BIT     (1 << 5)  // 1 = sensor still converting
 #define STATUS_MEM_ERR_BIT  (1 << 2)  // 1 = internal checksum failed
 #define P_OFFSET_MBAR 0 // calibration offset
-#define AVG_SAMPLE_COUNT 100 // amount of samples that we use to average before printing
 
 #define SAMPLE_INTERVAL_MS  8
-#define TOTAL_INTERVAL_MS   10
+#define TOTAL_INTERVAL_MS   10 // per sample
+
+#define SAMPLE_RATE_SEC 1 // minimum allowed is 0.01 seconds because that will be one sample
+#define AVG_SAMPLE_COUNT ((SAMPLE_RATE_SEC*1000)/TOTAL_INTERVAL_MS) // amount of samples that we use to average before printing
 
 typedef enum {
     STATE_WRITE,
@@ -186,6 +188,7 @@ void keller_get_pressure_task(void *p_arg)
   int avg_sample_counter = 0;
   uint8_t raw[5];
   uint64_t t_ticks = 0;
+  uint64_t t_ticks_mid = 0;
   uint32_t cycle_start = 0;
   uint32_t time_after_trigger = 0;
   uint32_t sample_interval_ticks = sl_sleeptimer_ms_to_tick(SAMPLE_INTERVAL_MS);
@@ -252,13 +255,13 @@ void keller_get_pressure_task(void *p_arg)
                           pressure_sum += p_mbar;
                           temp_sum += t_centi;
                           avg_sample_counter++;
+                          if (avg_sample_counter == (AVG_SAMPLE_COUNT+1)/2){ // integer division truncates so the +1 protects result if sample count is 1
+                               t_ticks_mid = t_ticks; // store the time halfway through the averaging of samples
+                          }
                           if (avg_sample_counter == AVG_SAMPLE_COUNT) {
                               if (keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
                                                   temp_sum/AVG_SAMPLE_COUNT,
-                                                  t_ticks)){
-                                  pressure_sum = 0;
-                                  temp_sum = 0;
-                                  avg_sample_counter = 0;
+                                                  t_ticks_mid)){
                               }
                               else {
                                   freq = sl_sleeptimer_get_timer_frequency(); // 32768 on EFM32GG11
@@ -268,10 +271,6 @@ void keller_get_pressure_task(void *p_arg)
                                          (uint32_t)(t_sec_whole / 1000000),
                                          (uint32_t)(t_sec_whole % 1000000),
                                          (uint32_t)t_sec_frac);
-
-                                  pressure_sum = 0;
-                                  temp_sum = 0;
-                                  avg_sample_counter = 0;
                                        }
                               pressure_sum = 0;
                               temp_sum = 0;
