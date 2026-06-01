@@ -296,6 +296,7 @@ void keller_get_pressure_task(void *p_arg)
           }
 
           case STATE_READ: {
+		// put Hall effect sensor read here as well
               bool read_ok = keller_p_sensor_read(raw, sizeof(raw));
               t_ticks = sl_sleeptimer_get_tick_count64();
               if (read_ok) {
