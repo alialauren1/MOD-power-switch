@@ -20,7 +20,7 @@ void keller_buffer_init(void) {
     count = 0; // how many samples in buffer
 }
 
-bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks) { // writes to buffer[write_index] and appends write_index by 1
+bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) { // writes to buffer[write_index] and appends write_index by 1
     CORE_DECLARE_IRQ_STATE; // declares saved interrupt state variable
 
     // Atomic check if buffer is full
@@ -35,6 +35,7 @@ bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks) { //
     buffer[write_index].p_mbar  = p_mbar;
     buffer[write_index].t_centi = t_centi;
     buffer[write_index].t_ticks = t_ticks;
+    buffer[write_index].hall = hall;
     write_index = (write_index + 1) % KELLER_BUFFER_SIZE; // % modulo makes buffer circular, when index reaches 16, it wraps back to zero
 
     // Atomic increment of count

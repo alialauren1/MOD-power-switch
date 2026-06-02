@@ -17,10 +17,11 @@ typedef struct {
     int32_t p_mbar;
     int32_t t_centi;
     uint64_t t_ticks;
+    int hall;
 } keller_sample_t;
 
 void keller_buffer_init(void);
-bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks);
+bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall);
 bool keller_buffer_retrieve(keller_sample_t *sample);
 bool keller_buffer_is_empty(void);
 

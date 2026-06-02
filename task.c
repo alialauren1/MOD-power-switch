@@ -40,6 +40,8 @@
 #include <stdlib.h>
 #include "mod_sd.h"
 #include <string.h>
+#include "em_gpio.h"
+#include "em_cmu.h"
 
 //For Keller_get_pressure_taskd
 #define SENSOR_I2C_ADDR     0x40
@@ -54,6 +56,10 @@
 
 #define SAMPLE_RATE_SEC 1 // minimum allowed is 0.01 seconds because that will be one sample
 #define AVG_SAMPLE_COUNT ((SAMPLE_RATE_SEC*1000)/TOTAL_INTERVAL_MS) // amount of samples that we use to average before printing
+
+#define HALL_EFFECT_PORT  gpioPortA   // change to your pin
+#define HALL_EFFECT_PIN   8           // change to your pin
+#define HALL_EFFECT_IDLE_STATE 1 // 1 = naturally HIGH (active-low output), 0 = naturally LOW (active high output)
 
 typedef enum {
     STATE_WRITE,
@@ -75,12 +81,11 @@ static CPU_STK retrieve_from_buf_stk[RETRIEVE_P_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
 
 #define SD_BATCH_WRITE_SIZE 512
-#define SD_SAMPLES_PER_WRITE 15
+#define SD_SAMPLES_PER_WRITE 14
 static char sd_batch_write_buf[SD_BATCH_WRITE_SIZE];
 static int sd_batch_sample_count = 0;
 static int sd_bytes_merged = 0;
-static int sd_batch_fully_dumped = 0;
-static char data_array_for_sd_card[34]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
+static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
 #define BUTTON_TASK_PRIO      31u
@@ -208,7 +213,13 @@ void keller_get_pressure_task(void *p_arg)
   uint64_t t_sec_whole = 0;
   uint64_t t_sec_frac  = 0;
 
+  int hall_midway = 0; // TODO: well 0 is an answer so figure out what happens if its the zero from init vs 0 from sensor reading
+  int hall_raw = 0;
+
   keller_buffer_init();
+
+  CMU_ClockEnable(cmuClock_GPIO, true);
+  GPIO_PinModeSet(HALL_EFFECT_PORT, HALL_EFFECT_PIN, gpioModeInputPull, HALL_EFFECT_IDLE_STATE); // high at first, when pulled low will detect 0
 
   keller_state_t state = STATE_WRITE; // start on this state
 
@@ -259,11 +270,13 @@ void keller_get_pressure_task(void *p_arg)
                           avg_sample_counter++;
                           if (avg_sample_counter == (AVG_SAMPLE_COUNT+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
                                t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
+                               hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
                           }
                           if (avg_sample_counter == AVG_SAMPLE_COUNT) {
                               if (keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
                                                   temp_sum/AVG_SAMPLE_COUNT,
-                                                  t_ticks_mid)){
+                                                  t_ticks_mid,
+                                                  hall_midway)){
                               }
                               else {
                                   freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
@@ -272,7 +285,8 @@ void keller_get_pressure_task(void *p_arg)
                                   printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
                                          (uint32_t)(t_sec_whole / 1000000),
                                          (uint32_t)(t_sec_whole % 1000000),
-                                         (uint32_t)t_sec_frac);
+                                         (uint32_t)t_sec_frac),
+                                         (int)hall_midway;
                                        }
                               pressure_sum = 0;
                               temp_sum = 0;
@@ -296,7 +310,7 @@ void keller_get_pressure_task(void *p_arg)
           }
 
           case STATE_READ: {
-		// put Hall effect sensor read here as well
+              hall_raw = GPIO_PinInGet(HALL_EFFECT_PORT, HALL_EFFECT_PIN); // Read Value of hall effect sensor
               bool read_ok = keller_p_sensor_read(raw, sizeof(raw));
               t_ticks = sl_sleeptimer_get_tick_count64();
               if (read_ok) {
@@ -376,7 +390,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
           int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                             "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu\r\n",
+                             "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
                              (sample.p_mbar<0 ? '-':' '),
                              (int)(abs(sample.p_mbar) / 1000),
                              (int)(abs(sample.p_mbar) % 1000),
@@ -384,7 +398,8 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (int)((sample.t_centi * 9 / 5 + 3200) % 100),
                              (uint32_t)(t_sec_whole / 1000000),
                              (uint32_t)(t_sec_whole % 1000000),
-                             (uint32_t)t_sec_frac);
+                             (uint32_t)t_sec_frac,
+                             sample.hall);
 
           memcpy(sd_batch_write_buf+(sd_batch_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
                                                                                               // ^ the addition moves destination pointer forward by bytes already accumulated
