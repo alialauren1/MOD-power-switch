@@ -80,9 +80,9 @@ static OS_TCB  keller_tcb;
 static CPU_STK retrieve_from_buf_stk[RETRIEVE_P_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
 
-#define SD_BATCH_WRITE_SIZE 512
+#define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 14
-static char sd_batch_write_buf[SD_BATCH_WRITE_SIZE];
+static char sd_batch_write_buf[SD_BUF_WRITE_SIZE];
 static int sd_batch_sample_count = 0;
 static int sd_bytes_merged = 0;
 static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
