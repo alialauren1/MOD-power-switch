@@ -30,6 +30,7 @@
 
 #include "mod_sd.h"
 #include "sl_sleeptimer.h"
+#include "task.h"
 
 /*******************************************************************************
  *******************************   DEFINES   ***********************************
@@ -427,6 +428,8 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments)
 void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments)
 {
   (void)arguments; // must accept as param but no need to use
+  flush_sd_before_close();
+  reset_block_avg_data_accumulators();
   mod_sd_close_and_unmount_AW();
 }
 

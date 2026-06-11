@@ -178,7 +178,6 @@ void config_sample_rate_task(unsigned int rate_hz) {
     if (rate_hz < 1 || rate_hz > 100) rate_hz = 1;
     sample_rate_hz     = rate_hz;
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
-    reset_block_avg_data_accumulators();
 }
 
 void keller_get_pressure_task_create(void) {
