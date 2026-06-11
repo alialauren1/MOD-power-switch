@@ -151,8 +151,34 @@ void retrieve_pressure_from_buffer_task(void *p_arg); // forward declaration
 void button_task(void *p_arg); // forward declaration
 //-------------------------------------------------------------------------------------------------------------
 
+void reset_block_avg_data_accumulators(void){
+  pressure_sum       = 0;
+  temp_sum           = 0;
+  avg_sample_counter = 0;
+  keller_sample_t discard;
+  while (keller_buffer_retrieve(&discard)) {}
+}
+
+void flush_sd_before_close(void){
+  if (sd_buffer_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
+      mod_sd_write_AW(sd_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
+      sd_buffer_sample_count=0;
+      sd_bytes_merged = 0;
+  }
+  else{
+      printf("No flush of data to sd card needed\r\n");
+  }
+}
+
 unsigned int get_sample_rate_hz(void){
   return sample_rate_hz;
+}
+
+void config_sample_rate_task(unsigned int rate_hz) {
+    if (rate_hz < 1 || rate_hz > 100) rate_hz = 1;
+    sample_rate_hz     = rate_hz;
+    avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
+    reset_block_avg_data_accumulators();
 }
 
 void keller_get_pressure_task_create(void) {
@@ -285,8 +311,7 @@ void keller_get_pressure_task(void *p_arg)
                                   printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
                                          (uint32_t)(t_sec_whole / 1000000),
                                          (uint32_t)(t_sec_whole % 1000000),
-                                         (uint32_t)t_sec_frac),
-                                         (uint32_t)hall_midway;
+                                         (uint32_t)t_sec_frac);
                                        }
                               pressure_sum = 0;
                               temp_sum = 0;
@@ -310,9 +335,9 @@ void keller_get_pressure_task(void *p_arg)
           }
 
           case STATE_READ: {
-              hall_raw = GPIO_PinInGet(HALL_EFFECT_PORT, HALL_EFFECT_PIN); // Read Value of hall effect sensor
               bool read_ok = keller_p_sensor_read(raw, sizeof(raw));
               t_ticks = sl_sleeptimer_get_tick_count64();
+              hall_raw = GPIO_PinInGet(HALL_EFFECT_PORT, HALL_EFFECT_PIN); // Read Value of hall effect sensor
               if (read_ok) {
                   first_loop = false;
                   data_processed = false;
@@ -377,7 +402,7 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
   while (1) {
 
       // drain circular buffer and printf
-      keller_sample_t sample;
+      keller_sample_t sample; // keller_buffer_Store holds the block averaged samples
 
       while (keller_buffer_retrieve(&sample)) {
 
@@ -420,17 +445,6 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
   }
 }
 
-void flush_sd_before_close(void){
-  if (sd_buffer_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
-      mod_sd_write_AW(sd_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
-      sd_buffer_sample_count=0;
-      sd_bytes_merged = 0;
-  }
-  else{
-      printf("No flush of data to sd card needed\r\n");
-  }
-}
-
 void button_task_create(void) {
   RTOS_ERR err;
 
@@ -455,8 +469,11 @@ void button_task(void *p_arg) {
   uint8_t button_press_count = 0;
   while (1) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
-          if (++button_press_count >=5){
+          if (++button_press_count >=5){ // 5 increments of the button poll check
               button_press_count =0;
+              // TODO: if averaging window (1000/sample_rate_hz) <= 30 s, OSTimeDly one window then wait are write to SD
+              keller_sample_t discard;
+              while (keller_buffer_retrieve(&discard)) {}
               flush_sd_before_close();
               mod_sd_close_and_unmount_AW();
           }

@@ -67,11 +67,11 @@ bool keller_buffer_retrieve(keller_sample_t *sample) { // copies buffer[read_ind
     return true;
 }
 
-bool keller_buffer_is_empty(void) {
-  CORE_DECLARE_IRQ_STATE;
-  bool empty;
-  CORE_ENTER_ATOMIC();
-  empty = (count == 0);
-  CORE_EXIT_ATOMIC();
-  return empty;
-}
+//bool keller_buffer_is_empty(void) {
+//  CORE_DECLARE_IRQ_STATE;
+//  bool empty;
+//  CORE_ENTER_ATOMIC();
+//  empty = (count == 0);
+//  CORE_EXIT_ATOMIC();
+//  return empty;
+//}
