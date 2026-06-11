@@ -54,8 +54,14 @@
 #define SAMPLE_INTERVAL_MS  8
 #define TOTAL_INTERVAL_MS   10 // per sample
 
-#define SAMPLE_RATE_SEC 1 // minimum allowed is 0.01 seconds because that will be one sample
-#define AVG_SAMPLE_COUNT ((SAMPLE_RATE_SEC*1000)/TOTAL_INTERVAL_MS) // amount of samples that we use to average before printing
+#define SAMPLE_RATE_HZ_DEFAULT  10 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
+#define AVG_SAMPLE_COUNT_DEFAULT ((1000 / SAMPLE_RATE_HZ_DEFAULT) / TOTAL_INTERVAL_MS) // amnt of samples used to avg, calculated from sample_rate_hz after config loads
+
+static uint32_t sample_rate_hz  = SAMPLE_RATE_HZ_DEFAULT;    // default, overwritten by config file on startup
+static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalculated by apply_config_sample_rate_task() after config loads
+static int32_t  pressure_sum     = 0;     // ← add
+static int32_t  temp_sum         = 0;     // ← add
+static uint32_t avg_sample_counter = 0;   // ← add
 
 #define HALL_EFFECT_PORT  gpioPortA   // change to your pin
 #define HALL_EFFECT_PIN   8           // change to your pin
@@ -82,8 +88,8 @@ static OS_TCB  retrieve_from_buf_tcb;
 
 #define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 14
-static char sd_batch_write_buf[SD_BUF_WRITE_SIZE];
-static int sd_batch_sample_count = 0;
+static char sd_write_buf[SD_BUF_WRITE_SIZE];
+static int sd_buffer_sample_count = 0;
 static int sd_bytes_merged = 0;
 static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
@@ -92,12 +98,6 @@ static char data_array_for_sd_card[36]; // define at top of file and make static
 #define BUTTON_TASK_STK_SIZE  512u
 static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
 static OS_TCB  button_tcb;
-
-//For Error Message task
-#define ERR_TASK_PRIO      35u
-#define ERR_TASK_STK_SIZE  128u
-static CPU_STK err_stk[ERR_TASK_STK_SIZE];
-static OS_TCB  err_tcb;
 
 //For Keller_get_pressure_task
 static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
@@ -149,8 +149,11 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
 void keller_get_pressure_task(void *p_arg); // forward declaration
 void retrieve_pressure_from_buffer_task(void *p_arg); // forward declaration
 void button_task(void *p_arg); // forward declaration
-void err_msg_task(void *p_arg); // forward declaration
 //-------------------------------------------------------------------------------------------------------------
+
+unsigned int get_sample_rate_hz(void){
+  return sample_rate_hz;
+}
 
 void keller_get_pressure_task_create(void) {
   RTOS_ERR err;
@@ -190,9 +193,6 @@ void keller_get_pressure_task(void *p_arg)
 
   bool first_loop = true;
   bool data_processed = false;
-  int32_t pressure_sum = 0;
-  int32_t temp_sum = 0;
-  int avg_sample_counter = 0;
   uint8_t raw[5];
   uint64_t t_ticks = 0;
   uint64_t t_ticks_mid = 0;
@@ -268,13 +268,13 @@ void keller_get_pressure_task(void *p_arg)
                           pressure_sum += p_mbar;
                           temp_sum += t_centi;
                           avg_sample_counter++;
-                          if (avg_sample_counter == (AVG_SAMPLE_COUNT+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
+                          if (avg_sample_counter == (avg_sample_count+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
                                t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
                                hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
                           }
-                          if (avg_sample_counter == AVG_SAMPLE_COUNT) {
-                              if (keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
-                                                  temp_sum/AVG_SAMPLE_COUNT,
+                          if (avg_sample_counter == avg_sample_count) {
+                              if (keller_buffer_store(pressure_sum/(int32_t)avg_sample_count,
+                                                  temp_sum/(int32_t)avg_sample_count,
                                                   t_ticks_mid,
                                                   hall_midway)){
                               }
@@ -286,7 +286,7 @@ void keller_get_pressure_task(void *p_arg)
                                          (uint32_t)(t_sec_whole / 1000000),
                                          (uint32_t)(t_sec_whole % 1000000),
                                          (uint32_t)t_sec_frac),
-                                         (int)hall_midway;
+                                         (uint32_t)hall_midway;
                                        }
                               pressure_sum = 0;
                               temp_sum = 0;
@@ -401,21 +401,17 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
                              (uint32_t)t_sec_frac,
                              sample.hall);
 
-          memcpy(sd_batch_write_buf+(sd_batch_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
+          memcpy(sd_write_buf+(sd_buffer_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
                                                                                               // ^ the addition moves destination pointer forward by bytes already accumulated
-          sd_batch_sample_count++;
+          sd_buffer_sample_count++;
           sd_bytes_merged += len; // bytes written to data_array_for_sd_card
 
-          if (sd_batch_sample_count >= SD_SAMPLES_PER_WRITE){
-              uint32_t write_start = sl_sleeptimer_get_tick_count();
-              bool write_ok = mod_sd_write_AW(sd_batch_write_buf,sd_batch_sample_count*len);
-              uint32_t write_end = sl_sleeptimer_get_tick_count();
-              uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-//              printf("SD W: %lu ms\r\n", write_ms);
+          if (sd_buffer_sample_count >= SD_SAMPLES_PER_WRITE){
+              bool write_ok = mod_sd_write_AW(sd_write_buf,sd_buffer_sample_count*len);
               if (!write_ok){
                   printf("Write failed for buffer \r\n");
               }
-              sd_batch_sample_count=0;
+              sd_buffer_sample_count=0;
               sd_bytes_merged = 0;
           }
       }
@@ -424,10 +420,10 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
   }
 }
 
-static void flush_sd_before_close(void){
-  if (sd_batch_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
-      mod_sd_write_AW(sd_batch_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
-      sd_batch_sample_count=0;
+void flush_sd_before_close(void){
+  if (sd_buffer_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
+      mod_sd_write_AW(sd_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
+      sd_buffer_sample_count=0;
       sd_bytes_merged = 0;
   }
   else{
@@ -456,39 +452,20 @@ void button_task_create(void) {
 void button_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
+  uint8_t button_press_count = 0;
   while (1) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
-          flush_sd_before_close();
-          mod_sd_close_and_unmount_AW();
+          if (++button_press_count >=5){
+              button_press_count =0;
+              flush_sd_before_close();
+              mod_sd_close_and_unmount_AW();
+          }
+      }
+      else {
+              button_press_count = 0;
       }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
 
       // OSTaskDelete put here
-  }
-}
-
-void err_msg_task_create(void) {
-  RTOS_ERR err;
-
-  OSTaskCreate(&err_tcb,
-               "Error",
-               err_msg_task,
-               NULL,
-               ERR_TASK_PRIO,
-               &err_stk[0],
-               (ERR_TASK_STK_SIZE / 10u),
-               ERR_TASK_STK_SIZE,
-               0u,
-               0u,
-               DEF_NULL,
-               OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
-               &err);
-}
-
-void err_msg_task(void *p_arg){
-  (void)p_arg;
-  RTOS_ERR err;
-  while (1) {
-      OSTimeDly(500, OS_OPT_TIME_DLY, &err); // poll every 500ms
   }
 }

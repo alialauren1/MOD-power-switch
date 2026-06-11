@@ -9,7 +9,5 @@ void app_init(void){
   retrieve_pressure_from_buffer_task_create();
   button_task_create();
   cli_app_init();
-  err_msg_task_create();
-
 }
 

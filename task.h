@@ -11,6 +11,6 @@
 void keller_get_pressure_task_create(void);
 void retrieve_pressure_from_buffer_task_create(void);
 void button_task_create(void);
-void err_msg_task_create(void);
+void flush_sd_before_close(void);
 
 #endif /* TASK_H_ */
