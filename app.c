@@ -5,9 +5,9 @@
 void app_init(void){
   //create tasks
   mod_sd_create_init_task();
-  keller_get_pressure_task_create();
-  retrieve_pressure_from_buffer_task_create();
-  button_task_create();
+  get_sensor_data_task_create();
+  retrieve_data_from_buffer_and_sd_store_task_create();
+  button_stop_logging_task_create();
   cli_app_init();
 }
 

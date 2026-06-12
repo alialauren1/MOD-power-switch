@@ -36,10 +36,10 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "Keller_Pressure_Buffer.h"
 #include <stdlib.h>
 #include "mod_sd.h"
 #include <string.h>
+#include <Sensor_Data_Buffer.h>
 #include "em_gpio.h"
 #include "em_cmu.h"
 
@@ -75,15 +75,15 @@ typedef enum {
 } keller_state_t;
 
 //For Keller_get_pressure_task_create
-#define KELLER_GET_PRESSURE_TASK_PRIO      11u
-#define KELLER_GET_PRESSURE_TASK_STK_SIZE  1024u
-static CPU_STK keller_stk[KELLER_GET_PRESSURE_TASK_STK_SIZE];
-static OS_TCB  keller_tcb;
+#define GET_SENSOR_DATA_TASK_PRIO      11u
+#define GET_SENSOR_DATA_TASK_STK_SIZE  1024u
+static CPU_STK sensor_stk[GET_SENSOR_DATA_TASK_STK_SIZE];
+static OS_TCB  sensor_tcb;
 
 //For Printing Pressure tasks
-#define RETRIEVE_P_FROM_BUF_TASK_PRIO      20u
-#define RETRIEVE_P_FROM_BUF_TASK_STK_SIZE  1024u
-static CPU_STK retrieve_from_buf_stk[RETRIEVE_P_FROM_BUF_TASK_STK_SIZE];
+#define RETRIEVE_DATA_FROM_BUF_TASK_PRIO      20u
+#define RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE  1024u
+static CPU_STK retrieve_from_buf_stk[RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
 
 #define SD_BUF_WRITE_SIZE 512
@@ -94,10 +94,10 @@ static int sd_bytes_merged = 0;
 static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
-#define BUTTON_TASK_PRIO      31u
-#define BUTTON_TASK_STK_SIZE  512u
-static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
-static OS_TCB  button_tcb;
+#define BUTTON_STOP_LOGGING_TASK_PRIO      31u
+#define BUTTON_STOP_LOGGING_TASK_STK_SIZE  512u
+static CPU_STK button_stop_logging_stk[BUTTON_STOP_LOGGING_TASK_STK_SIZE];
+static OS_TCB  button_stop_logging_tcb;
 
 //For Keller_get_pressure_task
 static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
@@ -146,17 +146,17 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
   return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone); // compare return value of I2C_TransferReturn_TypeDef to i2cTransferDone, if equal then true (1) gets returned, means successful.
 }
 
-void keller_get_pressure_task(void *p_arg); // forward declaration
-void retrieve_pressure_from_buffer_task(void *p_arg); // forward declaration
-void button_task(void *p_arg); // forward declaration
+void get_sensor_data_task(void *p_arg); // forward declaration
+void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
+void button_stop_logging_task(void *p_arg); // forward declaration
 //-------------------------------------------------------------------------------------------------------------
 
 void reset_block_avg_data_accumulators(void){
   pressure_sum       = 0;
   temp_sum           = 0;
   avg_sample_counter = 0;
-  keller_sample_t discard;
-  while (keller_buffer_retrieve(&discard)) {}
+  sensor_sample_t discard;
+  while (sensor_data_buffer_retrieve(&discard)) {}
 }
 
 void flush_sd_before_close(void){
@@ -180,17 +180,17 @@ void config_sample_rate_task(unsigned int rate_hz) {
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }
 
-void keller_get_pressure_task_create(void) {
+void get_sensor_data_task_create(void) {
   RTOS_ERR err;
 
-  OSTaskCreate(&keller_tcb,
-               "Keller ACQ",
-               keller_get_pressure_task,
+  OSTaskCreate(&sensor_tcb,
+               "Sensor ACQ",
+               get_sensor_data_task,
                NULL,
-               KELLER_GET_PRESSURE_TASK_PRIO,
-               &keller_stk[0],
-               (KELLER_GET_PRESSURE_TASK_STK_SIZE / 10u),
-               KELLER_GET_PRESSURE_TASK_STK_SIZE,
+               GET_SENSOR_DATA_TASK_PRIO,
+               &sensor_stk[0],
+               (GET_SENSOR_DATA_TASK_STK_SIZE / 10u),
+               GET_SENSOR_DATA_TASK_STK_SIZE,
                0u,
                0u,
                DEF_NULL,
@@ -198,7 +198,7 @@ void keller_get_pressure_task_create(void) {
                &err);
 }
 
-void keller_get_pressure_task(void *p_arg)
+void get_sensor_data_task(void *p_arg)
 {
   (void)p_arg;
 
@@ -241,7 +241,7 @@ void keller_get_pressure_task(void *p_arg)
   int hall_midway = 0; // TODO: well 0 is an answer so figure out what happens if its the zero from init vs 0 from sensor reading
   int hall_raw = 0;
 
-  keller_buffer_init();
+  sensor_data_buffer_init();
 
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(HALL_EFFECT_PORT, HALL_EFFECT_PIN, gpioModeInputPull, HALL_EFFECT_IDLE_STATE); // high at first, when pulled low will detect 0
@@ -298,7 +298,7 @@ void keller_get_pressure_task(void *p_arg)
                                hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
                           }
                           if (avg_sample_counter == avg_sample_count) {
-                              if (keller_buffer_store(pressure_sum/(int32_t)avg_sample_count,
+                              if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
                                                   temp_sum/(int32_t)avg_sample_count,
                                                   t_ticks_mid,
                                                   hall_midway)){
@@ -374,17 +374,17 @@ void keller_get_pressure_task(void *p_arg)
   }
 }
 
-void retrieve_pressure_from_buffer_task_create(void) {
+void retrieve_data_from_buffer_and_sd_store_task_create(void) {
   RTOS_ERR err;
 
   OSTaskCreate(&retrieve_from_buf_tcb,
                "RetrieveFromBuf",
-               retrieve_pressure_from_buffer_task,
+               retrieve_data_from_buffer_and_sd_store_task,
                NULL,
-               RETRIEVE_P_FROM_BUF_TASK_PRIO,
+               RETRIEVE_DATA_FROM_BUF_TASK_PRIO,
                &retrieve_from_buf_stk[0],
-               (RETRIEVE_P_FROM_BUF_TASK_STK_SIZE / 10u),
-               RETRIEVE_P_FROM_BUF_TASK_STK_SIZE,
+               (RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE / 10u),
+               RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE,
                0u,
 
                0u,
@@ -394,16 +394,16 @@ void retrieve_pressure_from_buffer_task_create(void) {
 }
 
 
-void retrieve_pressure_from_buffer_task(void *p_arg) {
+void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
 
   while (1) {
 
       // drain circular buffer and printf
-      keller_sample_t sample; // keller_buffer_Store holds the block averaged samples
+      sensor_sample_t sample; // keller_buffer_Store holds the block averaged samples
 
-      while (keller_buffer_retrieve(&sample)) {
+      while (sensor_data_buffer_retrieve(&sample)) {
 
           if (!mod_sd_is_open_AW()){
              break; // if SD card not open, exit loop
@@ -444,17 +444,17 @@ void retrieve_pressure_from_buffer_task(void *p_arg) {
   }
 }
 
-void button_task_create(void) {
+void button_stop_logging_task_create(void) {
   RTOS_ERR err;
 
-  OSTaskCreate(&button_tcb,
-               "Button",
-               button_task,
+  OSTaskCreate(&button_stop_logging_tcb,
+               "Button stop logging",
+               button_stop_logging_task,
                NULL,
-               BUTTON_TASK_PRIO,
-               &button_stk[0],
-               (BUTTON_TASK_STK_SIZE / 10u),
-               BUTTON_TASK_STK_SIZE,
+               BUTTON_STOP_LOGGING_TASK_PRIO,
+               &button_stop_logging_stk[0],
+               (BUTTON_STOP_LOGGING_TASK_STK_SIZE / 10u),
+               BUTTON_STOP_LOGGING_TASK_STK_SIZE,
                0u,
                0u,
                DEF_NULL,
@@ -462,7 +462,7 @@ void button_task_create(void) {
                &err);
 }
 
-void button_task(void *p_arg) {
+void button_stop_logging_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
   uint8_t button_press_count = 0;
@@ -471,8 +471,7 @@ void button_task(void *p_arg) {
           if (++button_press_count >=5){ // 5 increments of the button poll check
               button_press_count =0;
               // TODO: if averaging window (1000/sample_rate_hz) <= 30 s, OSTimeDly one window then wait are write to SD
-              keller_sample_t discard;
-              while (keller_buffer_retrieve(&discard)) {}
+              reset_block_avg_data_accumulators();
               flush_sd_before_close();
               mod_sd_close_and_unmount_AW();
           }

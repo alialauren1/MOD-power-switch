@@ -1,33 +1,33 @@
 /*
- * Keller_Pressure_Buffer.c
+ * Sensor_Data_Buffer.c
  *
  *  Created on: Apr 23, 2026
  *      Author: aliawolken
  */
 
 
-#include "Keller_Pressure_Buffer.h"
+#include <Sensor_Data_Buffer.h>
 #include "em_core.h"   // <-- ADD THIS for CORE_ENTER_ATOMIC / CORE_EXIT_ATOMIC
 
-static keller_sample_t buffer[KELLER_BUFFER_SIZE];
+static sensor_sample_t buffer[SENSOR_DATA_BUFFER_SIZE];
 static int write_index  = 0;
 static int read_index  = 0;
 static volatile int count = 0;       // <-- volatile because both tasks read/write it
 
-void keller_buffer_init(void) {
+void sensor_data_buffer_init(void) {
     write_index  = 0;
     read_index  = 0;
     count = 0; // how many samples in buffer
 }
 
-bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) { // writes to buffer[write_index] and appends write_index by 1
+bool sensor_data_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) { // writes to buffer[write_index] and appends write_index by 1
     CORE_DECLARE_IRQ_STATE; // declares saved interrupt state variable
 
     // Atomic check if buffer is full
     CORE_ENTER_ATOMIC();
-    if (count >= KELLER_BUFFER_SIZE) {
+    if (count >= SENSOR_DATA_BUFFER_SIZE) {
         CORE_EXIT_ATOMIC();
-        return false;                                     // if count is over the keller buffer size, we drop samples
+        return false;                                     // if count is over the sensor buffer size, we drop samples
     }
     CORE_EXIT_ATOMIC();
 
@@ -36,7 +36,7 @@ bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int 
     buffer[write_index].t_centi = t_centi;
     buffer[write_index].t_ticks = t_ticks;
     buffer[write_index].hall = hall;
-    write_index = (write_index + 1) % KELLER_BUFFER_SIZE; // % modulo makes buffer circular, when index reaches 16, it wraps back to zero
+    write_index = (write_index + 1) % SENSOR_DATA_BUFFER_SIZE; // % modulo makes buffer circular, when index reaches 16, it wraps back to zero
 
     // Atomic increment of count
     CORE_ENTER_ATOMIC();
@@ -45,7 +45,7 @@ bool keller_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int 
     return true;
 }
 
-bool keller_buffer_retrieve(keller_sample_t *sample) { // copies buffer[read_index] into *sample, and appends read_index by 1
+bool sensor_data_buffer_retrieve(sensor_sample_t *sample) { // copies buffer[read_index] into *sample, and appends read_index by 1
     CORE_DECLARE_IRQ_STATE; // declares saved interrupt state variable
 
     // Atomic check if buffer is empty
@@ -58,7 +58,7 @@ bool keller_buffer_retrieve(keller_sample_t *sample) { // copies buffer[read_ind
 
     // read data from slot, no racing on writes read_index
     *sample = buffer[read_index];
-    read_index = (read_index + 1) % KELLER_BUFFER_SIZE; // % modulo makes buffer circular, when index reaches 16, it wraps back to zero
+    read_index = (read_index + 1) % SENSOR_DATA_BUFFER_SIZE; // % modulo makes buffer circular, when index reaches 16, it wraps back to zero
 
     // Atomic increment of count
     CORE_ENTER_ATOMIC();
@@ -67,7 +67,7 @@ bool keller_buffer_retrieve(keller_sample_t *sample) { // copies buffer[read_ind
     return true;
 }
 
-//bool keller_buffer_is_empty(void) {
+//bool sensor_data_buffer_is_empty(void) {
 //  CORE_DECLARE_IRQ_STATE;
 //  bool empty;
 //  CORE_ENTER_ATOMIC();
