@@ -149,7 +149,7 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
 void get_sensor_data_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
 void button_stop_logging_task(void *p_arg); // forward declaration
-//-------------------------------------------------------------------------------------------------------------
+//----------------------------------Sub Tasks--------------------------------------------------------------
 
 void reset_block_avg_data_accumulators(void){
   pressure_sum       = 0;
@@ -179,6 +179,8 @@ void config_sample_rate_task(unsigned int rate_hz) {
     sample_rate_hz     = rate_hz;
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }
+
+//-----------------------------Acquisition Tasks-----------------------------------------------------
 
 void get_sensor_data_task_create(void) {
   RTOS_ERR err;
