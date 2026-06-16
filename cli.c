@@ -168,8 +168,8 @@ static sl_cli_command_entry_t a_table[] = {
   { "set_time", &cmd__sd_set_time, false },
   { "get_time", &cmd__get_time, false },
   { "get_file_name", &cmd__get_open_file_name_cmd, false },
-  { "start_acquisition", &cmd__start_acquisition, false },
-  { "stop_acquisition",  &cmd__stop_acquisition,  false },
+  { "start_acqu", &cmd__start_acquisition, false },
+  { "stop_acqu",  &cmd__stop_acquisition,  false },
   { "read_sensors",    &cmd__read_sensors,    false },
   { NULL, NULL, false },
 };
@@ -521,8 +521,13 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
  ******************************************************************************/
 void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
-    system_request_start_acquisition();
-    printf("start_acquisition requested\r\n");
+    if (system_get_state()== SYS_ACQU){
+        printf("start_acquisition requested, already in SYS_ACQU\r\n");
+    }
+    else {
+        system_request_start_acquisition();
+        printf("start_acquisition requested, changed running_mode to ..AUTO_CONTROL_AND_LOG\r\n");
+    }
 }
 
 /****************************************************************************//**
@@ -532,8 +537,13 @@ void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
  ******************************************************************************/
 void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
-    system_request_stop_acquisition();
-    printf("stop_acquisition requested\r\n");
+    if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
+        printf("stop_acquisition requested, already stopped\r\n");
+    }
+    else {
+        system_request_stop_acquisition();
+        printf("stop_acquisition requested, changed running_mode to ..IDLE\r\n");
+    }
 }
 
 /****************************************************************************//**
