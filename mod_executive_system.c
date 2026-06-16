@@ -133,9 +133,14 @@ static void executive_task(void *p_arg) {
           }
           else {
               if (running_mode == RUNNING_MODE_IDLE){
-                  // TODO: suspend all tasks
-                  // TODO: flush_sd_before_close(); reset_block_avg_data_accumulators(); mod_sd_close_and_unmount_AW();
-                  system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
+                  if (single_read_sensor_flag) {
+                      // dont change states yet because still working on printing sensor values
+                  }
+                  else {
+                      // TODO: suspend all tasks
+                      // TODO: flush_sd_before_close(); reset_block_avg_data_accumulators(); mod_sd_close_and_unmount_AW();
+                      system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
+                  }
               }
           }
 
