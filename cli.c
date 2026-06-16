@@ -31,6 +31,7 @@
 #include "mod_sd.h"
 #include "sl_sleeptimer.h"
 #include "task.h"
+#include "mod_executive_system.h"
 
 /*******************************************************************************
  *******************************   DEFINES   ***********************************
@@ -56,6 +57,9 @@ void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments);
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments);
 void get_time_cmd(sl_cli_command_arg_t *arguments);
 void get_open_file_name_cmd(sl_cli_command_arg_t *arguments);
+void start_acquisition_cmd(sl_cli_command_arg_t *arguments);
+void stop_acquisition_cmd(sl_cli_command_arg_t *arguments);
+void read_sensors_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -133,6 +137,24 @@ static const sl_cli_command_info_t cmd__get_open_file_name_cmd = \
                  " ",
                  { SL_CLI_ARG_END });
 
+static const sl_cli_command_info_t cmd__start_acquisition = \
+  SL_CLI_COMMAND(start_acquisition_cmd,
+                 "start data acquisition",
+                 "",
+                 { SL_CLI_ARG_END, });
+
+static const sl_cli_command_info_t cmd__stop_acquisition = \
+  SL_CLI_COMMAND(stop_acquisition_cmd,
+                 "stop data acquisition",
+                 "",
+                 { SL_CLI_ARG_END, });
+
+static const sl_cli_command_info_t cmd__read_sensors = \
+  SL_CLI_COMMAND(read_sensors_cmd,
+                 "take a single reading from sensors",
+                 "",
+                 { SL_CLI_ARG_END, });
+
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
   { "echo_int", &cmd__echoint, false },
@@ -146,6 +168,9 @@ static sl_cli_command_entry_t a_table[] = {
   { "set_time", &cmd__sd_set_time, false },
   { "get_time", &cmd__get_time, false },
   { "get_file_name", &cmd__get_open_file_name_cmd, false },
+  { "start_acquisition", &cmd__start_acquisition, false },
+  { "stop_acquisition",  &cmd__stop_acquisition,  false },
+  { "read_sensors",    &cmd__read_sensors,    false },
   { NULL, NULL, false },
 };
 
@@ -428,9 +453,7 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments)
 void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments)
 {
   (void)arguments; // must accept as param but no need to use
-  flush_sd_before_close();
-  reset_block_avg_data_accumulators();
-  mod_sd_close_and_unmount_AW();
+  system_request_stop_acquisition();
 }
 
 /****************************************************************************//**
@@ -490,6 +513,40 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
       printf("No file is open");
   }
 }
+
+/****************************************************************************//**
+ * Callback for start_acquisition_cmd
+ *
+ * The command is used to start acquisition tasks
+ ******************************************************************************/
+void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+    system_request_start_acquisition();
+    printf("start_acquisition requested\r\n");
+}
+
+/****************************************************************************//**
+ * Callback for stop_acquisition_cmd
+ *
+ * The command is used to stop acquisition tasks
+ ******************************************************************************/
+void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+    system_request_stop_acquisition();
+    printf("stop_acquisition requested\r\n");
+}
+
+/****************************************************************************//**
+ * Callback for read_sensors_cmd
+ *
+ * The command is used to read a single set of sensor values
+ ******************************************************************************/
+void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+    system_request_single_read();
+    printf("single read requested\r\n");
+}
+
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
  ******************************************************************************/
@@ -505,7 +562,6 @@ void cli_app_init(void)
   EFM_ASSERT(status);
 
 //  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
-  printf("---------------------------------\r\n");
   printf("---------------------------------\r\n");
   printf("Started CLI Micrium OS\r\n");
 

@@ -42,6 +42,7 @@
 #include <Sensor_Data_Buffer.h>
 #include "em_gpio.h"
 #include "em_cmu.h"
+#include "mod_executive_system.h"
 
 //For Keller_get_pressure_taskd
 #define SENSOR_I2C_ADDR     0x40
@@ -54,8 +55,7 @@
 #define SAMPLE_INTERVAL_MS  8
 #define TOTAL_INTERVAL_MS   10 // per sample
 
-#define SAMPLE_RATE_HZ_DEFAULT  10 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
-#define AVG_SAMPLE_COUNT_DEFAULT ((1000 / SAMPLE_RATE_HZ_DEFAULT) / TOTAL_INTERVAL_MS) // amnt of samples used to avg, calculated from sample_rate_hz after config loads
+#define AVG_SAMPLE_COUNT_DEFAULT ((1000 / SAMPLE_RATE_HZ_DEFAULT) / TOTAL_INTERVAL_MS); // amnt of samples used to avg, calculated from sample_rate_hz after config loads
 
 static uint32_t sample_rate_hz  = SAMPLE_RATE_HZ_DEFAULT;    // default, overwritten by config file on startup
 static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalculated by apply_config_sample_rate_task() after config loads
@@ -149,6 +149,7 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
 void get_sensor_data_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
 void button_stop_logging_task(void *p_arg); // forward declaration
+
 //----------------------------------Sub Tasks--------------------------------------------------------------
 
 void reset_block_avg_data_accumulators(void){
@@ -179,6 +180,13 @@ void config_sample_rate_task(unsigned int rate_hz) {
     sample_rate_hz     = rate_hz;
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }
+
+void get_sensor_data_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); }
+void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
+void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); }
+void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
+void button_stop_logging_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_logging_tcb, &err); }
+void button_stop_logging_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_logging_tcb, &err); }
 
 //-----------------------------Acquisition Tasks-----------------------------------------------------
 
@@ -472,10 +480,7 @@ void button_stop_logging_task(void *p_arg) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
           if (++button_press_count >=5){ // 5 increments of the button poll check
               button_press_count =0;
-              // TODO: if averaging window (1000/sample_rate_hz) <= 30 s, OSTimeDly one window then wait are write to SD
-              reset_block_avg_data_accumulators();
-              flush_sd_before_close();
-              mod_sd_close_and_unmount_AW();
+              system_request_stop_recording();
           }
       }
       else {
