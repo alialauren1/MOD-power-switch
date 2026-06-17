@@ -45,8 +45,8 @@ static void executive_task(void *p_arg) {
       switch (system_state) {
 
         case SYS_STARTUP: {
-          printf("---------------------------------\r\n");
-          printf("---------------------------------\r\n");
+          printf("------------------------------------------------------\r\n");
+          printf("------------------------------------------------------\r\n");
           printf("S0: entered SYS_STARTUP\r\n");
 
           // defaults:

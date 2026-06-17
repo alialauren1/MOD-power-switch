@@ -589,12 +589,6 @@ void cli_app_init(void)
   printf("---------------------------------\r\n");
   printf("  Started CLI Micrium OS\r\n");
 
-  printf("  Useful CLI Options:\r\n");
-  printf("  - set_time to set the time of the sd card\r\n");
-  printf("  - get_time to get the current system time\r\n");
-  printf("  - get_file_name to see what file we are writing to\r\n");
-  printf("  - sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
-
   printf("  Instructions:\r\n");
   printf("  1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
   printf("  2. Use set_time to document time during data collection\r\n");
