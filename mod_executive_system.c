@@ -25,6 +25,7 @@ static run_time_variables_t          run_time_vars;
 static volatile bool single_read_sensor_flag = false;
 
 system_state_t system_get_state(void)       { return system_state; }
+running_mode_t system_get_running_mode(void) {return running_mode;}
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)        { single_read_sensor_flag = true; }
@@ -46,7 +47,7 @@ static void executive_task(void *p_arg) {
         case SYS_STARTUP: {
           printf("---------------------------------\r\n");
           printf("---------------------------------\r\n");
-          printf("entered SYS_STARTUP\r\n");
+          printf("S0: entered SYS_STARTUP\r\n");
 
           // defaults:
           running_mode = RUNNING_MODE_IDLE;
@@ -60,7 +61,7 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_INIT_INFRA_TASKS: {
-          printf("entered SYS_INIT_INFRA_TASKS\r\n");
+          printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
           cli_app_init();
           mod_sd_create_init_task();
           system_state = SYS_CONFIG;
@@ -68,19 +69,19 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_CONFIG: {
-          printf("entered SYS_CONFIG\r\n");
+          printf("S2: entered SYS_CONFIG\r\n");
           system_state = SYS_MEM;
           break;
         }
 
         case SYS_MEM:{
-          printf("entered SYS_MEM\r\n");
+          printf("S3: entered SYS_MEM\r\n");
           system_state = SYS_INIT_ACQ_TASKS;
           break;
         }
 
         case SYS_INIT_ACQ_TASKS: {
-          printf("entered SYS_INIT_ACQ_TASKS\r\n");
+          printf("S4: entered SYS_INIT_ACQ_TASKS\r\n");
 //          get_sensor_data_task_create();
 //          retrieve_data_from_buffer_and_sd_store_task_create();
 //          button_stop_logging_task_create();
@@ -89,13 +90,13 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_SELF_CHECK: {
-          printf("entered SYS_SELF_CHECK\r\n");
+          printf("S5: entered SYS_SELF_CHECK\r\n");
           system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
           break;
         }
 
         case SYS_RUNNING_MODE_CHECK_AND_IDLE: {
-          if (state_entry) {printf("entered SYS_RUNNING_MODE_CHECK_AND_IDLE\r\n");}
+          if (state_entry) {printf("S6: entered SYS_RUNNING_MODE_CHECK_AND_IDLE\r\n");}
           if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG){
               system_state = SYS_ACQU;
           }
@@ -107,7 +108,7 @@ static void executive_task(void *p_arg) {
 
         case SYS_ACQU: {
           if (state_entry) {
-              printf("entered SYS_ACQU\r\n");
+              printf("S7: entered SYS_ACQU\r\n");
               printf("logging=%d controller=%d\r\n",run_time_vars.logging_on_flg,run_time_vars.controller_on_flg);
               single_read_sensor_flag_copy = single_read_sensor_flag;
               if (single_read_sensor_flag_copy){
@@ -134,7 +135,7 @@ static void executive_task(void *p_arg) {
           else {
               if (running_mode == RUNNING_MODE_IDLE){
                   if (single_read_sensor_flag) {
-                      // dont change states yet because still working on printing sensor values
+                      // don't change states yet because still working on printing sensor values
                   }
                   else {
                       // TODO: suspend all tasks
@@ -148,7 +149,7 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_ERR: {
-          if (state_entry) {printf("entered SYS_ERR\r\n");}
+          if (state_entry) {printf("S8: entered SYS_ERR\r\n");}
           break;
         }
 

@@ -41,5 +41,6 @@ void           system_request_stop_acquisition(void);
 void           system_request_single_read(void);
 void           system_clear_single_read_flag(void);
 system_state_t system_get_state(void);
+running_mode_t system_get_running_mode(void);
 
 #endif /* MOD_EXECUTIVE_SYSTEM_H_ */

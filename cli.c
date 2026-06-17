@@ -510,7 +510,7 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
       printf("Writing to: %s\r\n", mod_sd_get_filename_AW());
   }
   else {
-      printf("No file is open");
+      printf("No file is open\r\n");
   }
 }
 
@@ -522,7 +522,13 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
 void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
     if (system_get_state()== SYS_ACQU){
-        printf("start_acquisition requested, already in SYS_ACQU\r\n");
+        if (system_get_running_mode() == RUNNING_MODE_IDLE) {
+            system_request_start_acquisition();
+            printf("start_acquisition requested, already in SYS_ACQU but still idle running mode, changing to auto control and log\r\n");
+        }
+        else {
+            printf("start_acquisition requested, already in SYS_ACQU and auto control and log running mode\r\n");
+        }
     }
     else {
         system_request_start_acquisition();
@@ -540,6 +546,9 @@ void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
     if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
         printf("stop_acquisition requested, already stopped\r\n");
     }
+    else if (system_get_running_mode() == RUNNING_MODE_IDLE){
+        printf("stop_acquisition requested, already in running_mode idle (in SYS_ACQ for temporary single read)\r\n");
+    }
     else {
         system_request_stop_acquisition();
         printf("stop_acquisition requested, changed running_mode to ..IDLE\r\n");
@@ -553,8 +562,13 @@ void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
  ******************************************************************************/
 void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
-    system_request_single_read();
-    printf("single read requested\r\n");
+    if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
+        printf("single read requested, in SYS_IDLE will go to SYS_ACQU state temporarily\r\n");
+    }
+    else {
+        printf("single read requested, in SYS_ACQU will print next averaged value\r\n");
+    }
+    system_request_single_read(); //sets flag to true
 }
 
 /*******************************************************************************
@@ -573,16 +587,16 @@ void cli_app_init(void)
 
 //  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
   printf("---------------------------------\r\n");
-  printf("Started CLI Micrium OS\r\n");
+  printf("  Started CLI Micrium OS\r\n");
 
-  printf("Useful CLI Options:\r\n");
-  printf("- set_time to set the time of the sd card\r\n");
-  printf("- get_time to get the current system time\r\n");
-  printf("- get_file_name to see what file we are writing to\r\n");
-  printf("- sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
+  printf("  Useful CLI Options:\r\n");
+  printf("  - set_time to set the time of the sd card\r\n");
+  printf("  - get_time to get the current system time\r\n");
+  printf("  - get_file_name to see what file we are writing to\r\n");
+  printf("  - sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
 
-  printf("Instructions:\r\n");
-  printf("1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
-  printf("2. Use set_time to document time during data collection\r\n");
+  printf("  Instructions:\r\n");
+  printf("  1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("  2. Use set_time to document time during data collection\r\n");
   printf("---------------------------------\r\n");
 }
