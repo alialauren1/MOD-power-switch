@@ -198,7 +198,7 @@ void mod_sd_init_task()
 
   if(res == (FRESULT)RES_OK)
   {
-      printf("FAT fs mounted successfully.\r\n");
+      printf("FATfs mount success\r\n");
       mod_sd_open_AW();
   }
   else

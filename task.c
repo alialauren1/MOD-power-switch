@@ -181,11 +181,11 @@ void config_sample_rate_task(unsigned int rate_hz) {
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }
 
-void get_sensor_data_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); }
+void get_sensor_data_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
-void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); }
+void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
-void button_stop_logging_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_logging_tcb, &err); }
+void button_stop_logging_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_logging_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_logging_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_logging_tcb, &err); }
 
 //-----------------------------Acquisition Tasks-----------------------------------------------------
@@ -401,6 +401,7 @@ void retrieve_data_from_buffer_and_sd_store_task_create(void) {
                DEF_NULL,
                OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
                &err);
+
 }
 
 
@@ -415,16 +416,13 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
 
       while (sensor_data_buffer_retrieve(&sample)) {
 
-          if (!mod_sd_is_open_AW()){
-             break; // if SD card not open, exit loop
-          }
-
           uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
           uint64_t t_sec_whole = sample.t_ticks / freq;
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
-          int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                             "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+          if (system_get_single_read_flag()){
+
+              printf("%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
                              (sample.p_mbar<0 ? '-':' '),
                              (int)(abs(sample.p_mbar) / 1000),
                              (int)(abs(sample.p_mbar) % 1000),
@@ -435,19 +433,41 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
                              (uint32_t)t_sec_frac,
                              sample.hall);
 
-          memcpy(sd_write_buf+(sd_buffer_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
-                                                                                              // ^ the addition moves destination pointer forward by bytes already accumulated
-          sd_buffer_sample_count++;
-          sd_bytes_merged += len; // bytes written to data_array_for_sd_card
-
-          if (sd_buffer_sample_count >= SD_SAMPLES_PER_WRITE){
-              bool write_ok = mod_sd_write_AW(sd_write_buf,sd_buffer_sample_count*len);
-              if (!write_ok){
-                  printf("Write failed for buffer \r\n");
-              }
-              sd_buffer_sample_count=0;
-              sd_bytes_merged = 0;
+              system_clear_single_read_flag(); //clear flag
           }
+
+          if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){
+              if (!mod_sd_is_open_AW()){
+                  break; // if SD card not open, exit loop
+              }
+
+              int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
+                                           "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+                                           (sample.p_mbar<0 ? '-':' '),
+                                           (int)(abs(sample.p_mbar) / 1000),
+                                           (int)(abs(sample.p_mbar) % 1000),
+                                           (int)((sample.t_centi * 9 / 5 + 3200) / 100),
+                                           (int)((sample.t_centi * 9 / 5 + 3200) % 100),
+                                           (uint32_t)(t_sec_whole / 1000000),
+                                           (uint32_t)(t_sec_whole % 1000000),
+                                           (uint32_t)t_sec_frac,
+                                           sample.hall);
+
+              memcpy(sd_write_buf+(sd_buffer_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
+                                                                                                  // ^ the addition moves destination pointer forward by bytes already accumulated
+              sd_buffer_sample_count++;
+              sd_bytes_merged += len; // bytes written to data_array_for_sd_card
+
+              if (sd_buffer_sample_count >= SD_SAMPLES_PER_WRITE){
+                  bool write_ok = mod_sd_write_AW(sd_write_buf,sd_buffer_sample_count*len);
+                  if (!write_ok){
+                      printf("Write failed for buffer \r\n");
+                  }
+                  sd_buffer_sample_count=0;
+                  sd_bytes_merged = 0;
+              }
+          }
+
       }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
@@ -473,14 +493,16 @@ void button_stop_logging_task_create(void) {
 }
 
 void button_stop_logging_task(void *p_arg) {
+
   (void)p_arg;
+
   RTOS_ERR err;
   uint8_t button_press_count = 0;
   while (1) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
           if (++button_press_count >=5){ // 5 increments of the button poll check
               button_press_count =0;
-              system_request_stop_recording();
+              system_request_stop_acquisition();
           }
       }
       else {

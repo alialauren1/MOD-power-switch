@@ -521,6 +521,15 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
  ******************************************************************************/
 void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
+
+    // This is to ensure you cant run this command prior to completing init states
+    system_state_t state = system_get_state();
+    if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
+        printf("command not available: system not fully initialized\r\n");
+        return;
+    }
+
+
     if (system_get_state()== SYS_ACQU){
         if (system_get_running_mode() == RUNNING_MODE_IDLE) {
             system_request_start_acquisition();
@@ -543,6 +552,15 @@ void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
  ******************************************************************************/
 void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
+
+    // This is to ensure you cant run this command prior to completing init states
+    system_state_t state = system_get_state();
+    if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
+        printf("command not available: system not fully initialized\r\n");
+        return;
+    }
+
+
     if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
         printf("stop_acquisition requested, already stopped\r\n");
     }
@@ -562,6 +580,15 @@ void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
  ******************************************************************************/
 void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
     (void)arguments;
+
+    // This is to ensure you cant run this command prior to completing init states
+    system_state_t state = system_get_state();
+    if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
+        printf("command not available: system not fully initialized\r\n");
+        return;
+    }
+
+
     if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
         printf("single read requested, in SYS_IDLE will go to SYS_ACQU state temporarily\r\n");
     }

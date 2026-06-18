@@ -24,12 +24,14 @@ static run_time_variables_t          run_time_vars;
 
 static volatile bool single_read_sensor_flag = false;
 
-system_state_t system_get_state(void)       { return system_state; }
-running_mode_t system_get_running_mode(void) {return running_mode;}
+system_state_t system_get_state(void)         { return system_state; }
+running_mode_t system_get_running_mode(void)  {return running_mode;}
+bool system_get_single_read_flag(void)        {return single_read_sensor_flag; }
+
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
-void system_request_single_read(void)        { single_read_sensor_flag = true; }
-void system_clear_single_read_flag(void)     { single_read_sensor_flag = false; }
+void system_request_single_read(void)          { single_read_sensor_flag = true; }
+void system_clear_single_read_flag(void)       { single_read_sensor_flag = false; }
 
 static void executive_task(void *p_arg) {
   (void)p_arg;
@@ -82,9 +84,11 @@ static void executive_task(void *p_arg) {
 
         case SYS_INIT_ACQ_TASKS: {
           printf("S4: entered SYS_INIT_ACQ_TASKS\r\n");
-//          get_sensor_data_task_create();
-//          retrieve_data_from_buffer_and_sd_store_task_create();
-//          button_stop_logging_task_create();
+          // tasks are suspended here right after their create functions !!!!
+          get_sensor_data_task_create(); get_sensor_data_task_suspend();
+          retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();
+          button_stop_logging_task_create(); button_stop_logging_task_suspend();
+
           system_state = SYS_SELF_CHECK;
           break;
         }
@@ -112,7 +116,8 @@ static void executive_task(void *p_arg) {
               printf("logging=%d controller=%d\r\n",run_time_vars.logging_on_flg,run_time_vars.controller_on_flg);
               single_read_sensor_flag_copy = single_read_sensor_flag;
               if (single_read_sensor_flag_copy){
-                  // TODO: resume necessary tasks because entering this state just to print value
+                  get_sensor_data_task_resume();
+                  retrieve_task_resume();
               }
               else {
                   // TODO: entered state upon starting recording, so need to check logging and controller flags
@@ -126,9 +131,11 @@ static void executive_task(void *p_arg) {
               }
           }
 
-          if (single_read_sensor_flag_copy){
+          if (single_read_sensor_flag_copy){ // this means we were never in auto&control mode, still idle, since copy was made
               if (!single_read_sensor_flag){
-                  // TO DO: suspend get sensor data and retrieve task
+                  get_sensor_data_task_suspend();
+                  retrieve_task_suspend();
+                  // TODO: suspend get sensor data and retrieve task using retrieve_task_suspend and get_sensor_data_task_suspend from task.c
                   system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // flag has been cleared so can move states
               }
           }
