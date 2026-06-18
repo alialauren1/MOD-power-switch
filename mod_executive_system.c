@@ -86,7 +86,8 @@ static void executive_task(void *p_arg) {
           printf("S4: entered SYS_INIT_ACQ_TASKS\r\n");
           // tasks are suspended here right after their create functions !!!!
           get_sensor_data_task_create(); get_sensor_data_task_suspend();
-          retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();
+          retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
+          retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
           button_stop_logging_task_create(); button_stop_logging_task_suspend();
 
           system_state = SYS_SELF_CHECK;
@@ -115,45 +116,67 @@ static void executive_task(void *p_arg) {
               printf("S7: entered SYS_ACQU\r\n");
               printf("logging=%d controller=%d\r\n",run_time_vars.logging_on_flg,run_time_vars.controller_on_flg);
               single_read_sensor_flag_copy = single_read_sensor_flag;
+              
+              get_sensor_data_task_resume();        // start reading from sensors and store on circular buffer
+              // TODO: implement button task resume, make sure button functionality now just leaves SYS_ACQU
+              
               if (single_read_sensor_flag_copy){
-                  get_sensor_data_task_resume();
-                  retrieve_task_resume();
+                  retrieve_buf2_task_resume();
               }
               else {
-                  // TODO: entered state upon starting recording, so need to check logging and controller flags
-                  // TODO: resume get sensor data task and button task
                   if (run_time_vars.logging_on_flg){
-                      // TODO: resume retrieve sensor data task
+                      retrieve_task_resume();           // pull from circular buf and store on sd card
                   }
                   if (run_time_vars.controller_on_flg){
                       // TODO: resume controller task
                   }
               }
           }
+          
 
-          if (single_read_sensor_flag_copy){ // this means we were never in auto&control mode, still idle, since copy was made
-              if (!single_read_sensor_flag){
+          if (single_read_sensor_flag_copy && running_mode == RUNNING_MODE_IDLE){ // after state_entry, still in idle and reading single value
+              if (!single_read_sensor_flag){ // printed value so flag cleared
                   get_sensor_data_task_suspend();
-                  retrieve_task_suspend();
-                  // TODO: suspend get sensor data and retrieve task using retrieve_task_suspend and get_sensor_data_task_suspend from task.c
+                  retrieve_buf2_task_suspend();
+                  reset_block_avg_data_accumulators(); // discard samples accumulated during single read
                   system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // flag has been cleared so can move states
+
+                  // TODO: do i need to clear the single_read_sensor_flag_copy?
               }
           }
-          else {
-              if (running_mode == RUNNING_MODE_IDLE){
+
+
+
+          else { // in auto&control mode
+
+              if (running_mode == RUNNING_MODE_IDLE){ // CLI stop_acquisition was called -> now in idle or was never in auto&control mode
                   if (single_read_sensor_flag) {
                       // don't change states yet because still working on printing sensor values
                   }
                   else {
-                      // TODO: suspend all tasks
-                      // TODO: flush_sd_before_close(); reset_block_avg_data_accumulators(); mod_sd_close_and_unmount_AW();
+                      get_sensor_data_task_suspend();
+                      retrieve_task_suspend();
+                      retrieve_buf2_task_suspend();
+                      button_stop_logging_task_suspend();
+                      flush_sd_before_close();
+                      reset_block_avg_data_accumulators();
+                      mod_sd_close_and_unmount_AW();
                       system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
                   }
               }
-          }
 
+              else { // still in auto and control mode
+                  if (single_read_sensor_flag) {
+                      retrieve_buf2_task_resume();
+                  }
+              }
+
+
+
+          }
           break;
         }
+
 
         case SYS_ERR: {
           if (state_entry) {printf("S8: entered SYS_ERR\r\n");}

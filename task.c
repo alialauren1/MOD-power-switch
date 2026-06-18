@@ -86,6 +86,15 @@ static OS_TCB  sensor_tcb;
 static CPU_STK retrieve_from_buf_stk[RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
 
+//For Printing Pressure tasks
+#define RETRIEVE_DATA_FROM_BUF2_TASK_PRIO      25u
+#define RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE  1024u
+static CPU_STK retrieve_from_buf2_stk[RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE];
+static OS_TCB  retrieve_from_buf2_tcb;
+
+static sensor_sample_t sensor_data_buffer2;
+static bool sensor_data_buffer2_ready = false;
+
 #define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 14
 static char sd_write_buf[SD_BUF_WRITE_SIZE];
@@ -148,6 +157,7 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
 
 void get_sensor_data_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
+void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward declaration
 void button_stop_logging_task(void *p_arg); // forward declaration
 
 //----------------------------------Sub Tasks--------------------------------------------------------------
@@ -181,10 +191,28 @@ void config_sample_rate_task(unsigned int rate_hz) {
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }
 
+void sensor_data_buffer2_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) {
+    sensor_data_buffer2.p_mbar  = p_mbar;
+    sensor_data_buffer2.t_centi = t_centi;
+    sensor_data_buffer2.t_ticks = t_ticks;
+    sensor_data_buffer2.hall    = hall;
+    sensor_data_buffer2_ready   = true; // marks that sensor has stored a real reading
+}
+
+bool sensor_data_buffer2_retrieve(sensor_sample_t *sample) {
+    if (!sensor_data_buffer2_ready) return false; // wait until sensor has stored a real reading
+    *sample = sensor_data_buffer2;
+    sensor_data_buffer2_ready = false; // consumed — next retrieve will wait for the next store
+    return true;
+    // single_read_sensor_flag is cleared separately by the task after printing
+}
+
 void get_sensor_data_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
 void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
+void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf2_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
 void button_stop_logging_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_logging_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_logging_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_logging_tcb, &err); }
 
@@ -311,8 +339,7 @@ void get_sensor_data_task(void *p_arg)
                               if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
                                                   temp_sum/(int32_t)avg_sample_count,
                                                   t_ticks_mid,
-                                                  hall_midway)){
-                              }
+                                                  hall_midway)){ }
                               else {
                                   freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
                                   t_sec_whole = t_ticks / freq;
@@ -322,6 +349,13 @@ void get_sensor_data_task(void *p_arg)
                                          (uint32_t)(t_sec_whole % 1000000),
                                          (uint32_t)t_sec_frac);
                                        }
+                              if (system_get_single_read_flag()){
+                                  (sensor_data_buffer2_store(pressure_sum/(int32_t)avg_sample_count,
+                                                             temp_sum/(int32_t)avg_sample_count,
+                                                             t_ticks_mid,
+                                                             hall_midway));
+                              }
+
                               pressure_sum = 0;
                               temp_sum = 0;
                               avg_sample_counter = 0;
@@ -420,22 +454,6 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
           uint64_t t_sec_whole = sample.t_ticks / freq;
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
-          if (system_get_single_read_flag()){
-
-              printf("%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
-                             (sample.p_mbar<0 ? '-':' '),
-                             (int)(abs(sample.p_mbar) / 1000),
-                             (int)(abs(sample.p_mbar) % 1000),
-                             (int)((sample.t_centi * 9 / 5 + 3200) / 100),
-                             (int)((sample.t_centi * 9 / 5 + 3200) % 100),
-                             (uint32_t)(t_sec_whole / 1000000),
-                             (uint32_t)(t_sec_whole % 1000000),
-                             (uint32_t)t_sec_frac,
-                             sample.hall);
-
-              system_clear_single_read_flag(); //clear flag
-          }
-
           if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){
               if (!mod_sd_is_open_AW()){
                   break; // if SD card not open, exit loop
@@ -467,6 +485,64 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
                   sd_bytes_merged = 0;
               }
           }
+
+      }
+
+      OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
+  }
+}
+
+void retrieve_data_from_buffer2_and_single_read_task_create(void) {
+  RTOS_ERR err;
+
+  OSTaskCreate(&retrieve_from_buf2_tcb,
+               "RetrieveFromBuf2",
+               retrieve_data_from_buffer2_and_single_read_task,
+               NULL,
+               RETRIEVE_DATA_FROM_BUF2_TASK_PRIO,
+               &retrieve_from_buf2_stk[0],
+               (RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE / 10u),
+               RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE,
+               0u,
+               0u,
+               DEF_NULL,
+               OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
+               &err);
+
+}
+
+
+void retrieve_data_from_buffer2_and_single_read_task(void *p_arg) {
+  (void)p_arg;
+  RTOS_ERR err;
+
+  while (1) {
+
+      // drain circular buffer and printf
+      sensor_sample_t sample2; // keller_buffer_Store holds the block averaged samples
+
+      while (sensor_data_buffer2_retrieve(&sample2)) {
+
+          uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
+          uint64_t t_sec_whole = sample2.t_ticks / freq;
+          uint64_t t_sec_frac  = ((sample2.t_ticks % freq) * 1000000) / freq;
+
+          if (system_get_single_read_flag()){
+
+              printf("%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+                             (sample2.p_mbar<0 ? '-':' '),
+                             (int)(abs(sample2.p_mbar) / 1000),
+                             (int)(abs(sample2.p_mbar) % 1000),
+                             (int)((sample2.t_centi * 9 / 5 + 3200) / 100),
+                             (int)((sample2.t_centi * 9 / 5 + 3200) % 100),
+                             (uint32_t)(t_sec_whole / 1000000),
+                             (uint32_t)(t_sec_whole % 1000000),
+                             (uint32_t)t_sec_frac,
+                             sample2.hall);
+
+              system_clear_single_read_flag(); //clear flag
+          }
+
 
       }
 
