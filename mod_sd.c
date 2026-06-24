@@ -306,6 +306,7 @@ void mod_sd_close_and_unmount_AW(void) {
     }
 
     sd_file_open = 0; // clear flag now that mutex is acquired
+    sd_write_prev = 0; // clear so next first successful write will trigger the LED to turn on
     OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // release the lock
     f_close(&fp);
     f_mount(NULL, (TCHAR*)"", 0); // unmount file system
@@ -347,6 +348,20 @@ bool mod_sd_write_AW(char *buf, int len){
   }
   OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release sd_mutex lock, protecting fp so write and close cant overlap
   return successful_write;
+}
+
+bool mod_sd_remount_and_open_AW(void){
+  FRESULT res = f_mount(&fat_fs, (TCHAR*)"", 1);
+  if (res != FR_OK) {
+      printf("Remount failed: %d\r\n", res);
+      return false;
+  }
+  mod_sd_open_AW();
+  if (!mod_sd_is_open_AW()) {
+      printf("File open failed after remount.\r\n");
+      return false;
+  }
+  return true;
 }
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }

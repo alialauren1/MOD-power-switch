@@ -32,7 +32,7 @@ void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUT
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)          { single_read_sensor_flag = true; }
 void system_clear_single_read_flag(void)       { single_read_sensor_flag = false; }
-bool buf2_task_is_running = false;
+static bool buf2_task_is_running = false;
 
 static void executive_task(void *p_arg) {
   (void)p_arg;
@@ -132,6 +132,9 @@ static void executive_task(void *p_arg) {
               else {
                   if (run_time_vars.logging_on_flg){
                       retrieve_task_resume();           // pull from circular buf and store on sd card
+                      if (!mod_sd_is_open_AW()){
+                          mod_sd_remount_and_open_AW();
+                      }
                   }
                   if (run_time_vars.controller_on_flg){
                       // TODO: resume controller task
