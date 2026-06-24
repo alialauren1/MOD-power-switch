@@ -32,6 +32,7 @@ void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUT
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)          { single_read_sensor_flag = true; }
 void system_clear_single_read_flag(void)       { single_read_sensor_flag = false; }
+bool buf2_task_is_running = false;
 
 static void executive_task(void *p_arg) {
   (void)p_arg;
@@ -88,6 +89,7 @@ static void executive_task(void *p_arg) {
           get_sensor_data_task_create(); get_sensor_data_task_suspend();
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
+          // TODO: add control task
           button_stop_logging_task_create(); button_stop_logging_task_suspend();
 
           system_state = SYS_SELF_CHECK;
@@ -112,6 +114,9 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_ACQU: {
+          // TODO: fix led indicators
+          // TODO: re-mount SD card when we start acquisition the second time around (after already doing acqu and then stopping, restarting again)
+
           if (state_entry) {
               printf("S7: entered SYS_ACQU\r\n");
               printf("logging=%d controller=%d\r\n",run_time_vars.logging_on_flg,run_time_vars.controller_on_flg);
@@ -122,6 +127,7 @@ static void executive_task(void *p_arg) {
               
               if (single_read_sensor_flag_copy){
                   retrieve_buf2_task_resume();
+                  buf2_task_is_running = true;
               }
               else {
                   if (run_time_vars.logging_on_flg){
@@ -134,36 +140,40 @@ static void executive_task(void *p_arg) {
           }
           
 
-          if (single_read_sensor_flag_copy && running_mode == RUNNING_MODE_IDLE){ // after state_entry, still in idle and reading single value
-              if (!single_read_sensor_flag){ // printed value so flag cleared
-                  get_sensor_data_task_suspend();
+          if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG && single_read_sensor_flag){ // single read while in ACQU state, resume buf2 task to print value
+              if (!buf2_task_is_running){
+                  retrieve_buf2_task_resume();
+                  buf2_task_is_running = true;
+              }
+          }
+
+          if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG && !single_read_sensor_flag){ // single read while in ACQU state, resume buf2 task to print value
+              if (buf2_task_is_running == true) {
                   retrieve_buf2_task_suspend();
-                  reset_block_avg_data_accumulators(); // discard samples accumulated during single read
-                  system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // flag has been cleared so can move states
+                  buf2_task_is_running=false;
               }
           }
 
 
-          else if (running_mode == RUNNING_MODE_IDLE){ // CLI stop_acquisition was called -> now in idle or was never in auto&control mode
-            if (single_read_sensor_flag) {
-                // don't change states yet because still working on printing sensor values
-            }
-            else {
-                get_sensor_data_task_suspend();
-                retrieve_task_suspend();
-                retrieve_buf2_task_suspend();
-                button_stop_logging_task_suspend();
-                flush_sd_before_close();
-                reset_block_avg_data_accumulators();
-                mod_sd_close_and_unmount_AW();
-                system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
-            } }
+          // Exiting: only running_mode = idle and no pending single read
+          if (running_mode == RUNNING_MODE_IDLE && !single_read_sensor_flag){
 
-          // still in running_mode = auto&control mode
-          if (single_read_sensor_flag && running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG) {
-                 retrieve_buf2_task_resume();
+              if (!single_read_sensor_flag_copy){
+                  if (run_time_vars.logging_on_flg) { retrieve_task_suspend(); }
+                  if (run_time_vars.controller_on_flg) {
+                      // TODO: put control task suspend here
+                  }
+                  // TODO: button_stop_logging_task_suspend() only if button was resumed
+                  flush_sd_before_close();
+                  mod_sd_close_and_unmount_AW();
+              }
+
+              get_sensor_data_task_suspend();
+              reset_block_avg_data_accumulators();
+              if (buf2_task_is_running) {retrieve_buf2_task_suspend(); buf2_task_is_running=false;}
+
+              system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // shared by both paths
           }
-
 
           break;
         }
