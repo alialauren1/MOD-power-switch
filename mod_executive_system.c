@@ -54,7 +54,7 @@ static void executive_task(void *p_arg) {
           // defaults:
           running_mode = RUNNING_MODE_IDLE;
           run_time_vars.sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
-          run_time_vars.logging_on_flg = false;
+          run_time_vars.logging_on_flg = true;
           run_time_vars.controller_on_flg = false;
           single_read_sensor_flag = false;
 
@@ -140,40 +140,31 @@ static void executive_task(void *p_arg) {
                   retrieve_buf2_task_suspend();
                   reset_block_avg_data_accumulators(); // discard samples accumulated during single read
                   system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // flag has been cleared so can move states
-
-                  // TODO: do i need to clear the single_read_sensor_flag_copy?
               }
           }
 
 
+          else if (running_mode == RUNNING_MODE_IDLE){ // CLI stop_acquisition was called -> now in idle or was never in auto&control mode
+            if (single_read_sensor_flag) {
+                // don't change states yet because still working on printing sensor values
+            }
+            else {
+                get_sensor_data_task_suspend();
+                retrieve_task_suspend();
+                retrieve_buf2_task_suspend();
+                button_stop_logging_task_suspend();
+                flush_sd_before_close();
+                reset_block_avg_data_accumulators();
+                mod_sd_close_and_unmount_AW();
+                system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
+            } }
 
-          else { // in auto&control mode
-
-              if (running_mode == RUNNING_MODE_IDLE){ // CLI stop_acquisition was called -> now in idle or was never in auto&control mode
-                  if (single_read_sensor_flag) {
-                      // don't change states yet because still working on printing sensor values
-                  }
-                  else {
-                      get_sensor_data_task_suspend();
-                      retrieve_task_suspend();
-                      retrieve_buf2_task_suspend();
-                      button_stop_logging_task_suspend();
-                      flush_sd_before_close();
-                      reset_block_avg_data_accumulators();
-                      mod_sd_close_and_unmount_AW();
-                      system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
-                  }
-              }
-
-              else { // still in auto and control mode
-                  if (single_read_sensor_flag) {
-                      retrieve_buf2_task_resume();
-                  }
-              }
-
-
-
+          // still in running_mode = auto&control mode
+          if (single_read_sensor_flag && running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG) {
+                 retrieve_buf2_task_resume();
           }
+
+
           break;
         }
 
