@@ -285,7 +285,7 @@ static void mod_sd_open_AW(void){
   if(fres==FR_OK){
             GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
             sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-            f_write(&fp,"MOD LAB: Keller pressure sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
+            f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
             f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall\r\n") - 1, &bw);
             printf("File created: %s \r\n", name_buf);
   }
@@ -401,5 +401,70 @@ void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t h
       f_write(&log_fp,log_buf,strlen(log_buf),&bw);
       f_close(&log_fp);
   }
+}
+
+void mod_sd_load_config_AW(run_time_variables_t *cfg){
+  FIL    cfg_fp;
+  char   cfg_buf[64];
+  UINT   br;
+  TCHAR  cfg_name[16];
+
+  mod_sd_ff_encode("config.cfg", cfg_name, strlen("config.cfg"));
+
+  FRESULT res = f_open(&cfg_fp, cfg_name, FA_READ);
+
+  if (res == FR_NO_FILE){
+      // config.cfg doesn't exist yet, create it with defaults
+      res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_NEW);
+       if (res == FR_OK) {
+           UINT bw;
+           char line[64];
+           int len = snprintf(line, sizeof(line),
+               "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
+               cfg->sample_rate_hz,
+               (int)cfg->logging_on_flg,
+               (int)cfg->controller_on_flg);
+           f_write(&cfg_fp, line, len, &bw);
+           f_close(&cfg_fp);
+           printf("config.cfg created with defaults\r\n");
+       } else {
+           printf("config.cfg create failed: %d\r\n", res);
+       }
+  }
+  else if (res == FR_OK) {
+      f_read(&cfg_fp, cfg_buf, sizeof(cfg_buf) - 1, &br);
+      cfg_buf[br] = '\0';  // null-terminate so strtok and sscanf treat it as a valid C string
+      f_close(&cfg_fp);
+
+      unsigned int parsed_hz = 0;
+      int parsed_logging = -1;
+      int parsed_controller = -1;
+
+      // parse line by line — only overwrites fields that exist in the file,
+      // leaving the rest at the defaults set in SYS_STARTUP
+      char *line = strtok(cfg_buf, "\r\n");
+      while (line != NULL) {
+          if (sscanf(line, "sample_rate_hz=%u", &parsed_hz) == 1) {
+              if (parsed_hz >= 1 && parsed_hz <= 100) cfg->sample_rate_hz = parsed_hz;
+              else {
+                  cfg->sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
+                  printf("config.cfg: sample_rate_hz out of range, using default\r\n");
+              }
+          }
+          if (sscanf(line, "logging_on_flg=%d", &parsed_logging) == 1) {
+              if (parsed_logging == 0 || parsed_logging == 1) cfg->logging_on_flg = (bool)parsed_logging;
+          }
+          if (sscanf(line, "controller_on_flg=%d", &parsed_controller) == 1) {
+              if (parsed_controller == 0 || parsed_controller == 1) cfg->controller_on_flg = (bool)parsed_controller;
+          }
+          line = strtok(NULL, "\r\n");  // advance to next line; NULL continues from last strtok position
+      }
+      printf("config.cfg loaded\r\n");
+  }
+  else {
+      printf("config.cfg open error: %d, using defaults\r\n", res);
+  }
+
+
 }
 

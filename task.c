@@ -186,7 +186,7 @@ unsigned int get_sample_rate_hz(void){
 }
 
 void config_sample_rate_task(unsigned int rate_hz) {
-    if (rate_hz < 1 || rate_hz > 100) rate_hz = 1;
+    if (rate_hz < 1 || rate_hz > 100) rate_hz = SAMPLE_RATE_HZ_DEFAULT;
     sample_rate_hz     = rate_hz;
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }

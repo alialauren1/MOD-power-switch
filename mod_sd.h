@@ -52,4 +52,5 @@ void mod_sd_seed_rtc_AW(void);
 const char* mod_sd_get_filename_AW(void);
 void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day,
                               uint8_t hour, uint8_t min, uint8_t sec);
+void mod_sd_load_config_AW(run_time_variables_t *cfg);
 #endif /* MOD_SD_H_ */
