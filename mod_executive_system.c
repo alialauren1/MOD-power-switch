@@ -131,10 +131,10 @@ static void executive_task(void *p_arg) {
               }
               else {
                   if (run_time_vars.logging_on_flg){
-                      retrieve_task_resume();           // pull from circular buf and store on sd card
                       if (!mod_sd_is_open_AW()){
                           mod_sd_remount_and_open_AW();
                       }
+                      retrieve_task_resume();           // pull from circular buf and store on sd card
                   }
                   if (run_time_vars.controller_on_flg){
                       // TODO: resume controller task
