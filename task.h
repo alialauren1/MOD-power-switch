@@ -25,7 +25,7 @@ void config_sample_rate_task(unsigned int rate_hz);
 unsigned int get_sample_rate_hz(void);
 
 // called by mod_executive_system.c to park/resume acquisition tasks
-void get_sensor_data_task_suspend(void);
+void get_sensor_data_task_suspend_on_boot(void);
 void get_sensor_data_task_resume(void);
 void retrieve_task_suspend(void);
 void retrieve_task_resume(void);
@@ -34,5 +34,8 @@ void button_stop_logging_task_resume(void);
 
 void retrieve_buf2_task_suspend(void);
 void retrieve_buf2_task_resume(void);
+
+void sensor_request_state_reset(void);
+void get_sensor_data_task_suspend(void);
 
 #endif /* TASK_H_ */

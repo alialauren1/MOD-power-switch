@@ -207,7 +207,7 @@ bool sensor_data_buffer2_retrieve(sensor_sample_t *sample) {
     // single_read_sensor_flag is cleared separately by the task after printing
 }
 
-void get_sensor_data_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
 void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
@@ -215,6 +215,19 @@ void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retr
 void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
 void button_stop_logging_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_logging_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_logging_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_logging_tcb, &err); }
+
+static bool sensor_state_reset_on_resume = false;
+void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
+
+static keller_state_t sensor_task_state = STATE_WRITE; // start on this state
+
+void get_sensor_data_task_suspend(void) {
+    RTOS_ERR err;
+    while (sensor_task_state != STATE_DELAY) {
+        OSTimeDly(1, OS_OPT_TIME_DLY, &err);
+    }
+    OSTaskSuspend(&sensor_tcb, &err);
+}
 
 //-----------------------------Acquisition Tasks-----------------------------------------------------
 
@@ -284,21 +297,26 @@ void get_sensor_data_task(void *p_arg)
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(HALL_EFFECT_PORT, HALL_EFFECT_PIN, gpioModeInputPull, HALL_EFFECT_IDLE_STATE); // high at first, when pulled low will detect 0
 
-  keller_state_t state = STATE_WRITE; // start on this state
-
   while (1){
-      switch (state) {
+
+      if (sensor_state_reset_on_resume){
+          sensor_task_state = STATE_WRITE;
+          first_loop = true;
+          sensor_state_reset_on_resume = false;
+      }
+
+      switch (sensor_task_state) {
 
           case STATE_WRITE: {
               cycle_start = sl_sleeptimer_get_tick_count();
               bool trigger_ok = keller_p_sensor_trigger();
               if (trigger_ok) {
                   time_after_trigger = sl_sleeptimer_get_tick_count();
-                  state = STATE_WAIT;
+                  sensor_task_state = STATE_WAIT;
               }
               else if (!trigger_ok) {
                   printf("ERROR: trigger write failed\r\n");
-                  state = STATE_WRITE;
+                  sensor_task_state = STATE_DELAY;
               }
               else {
                   printf("ERROR: unexpected write state condition\r\n");
@@ -309,10 +327,11 @@ void get_sensor_data_task(void *p_arg)
           case STATE_WAIT: {
               uint32_t now = sl_sleeptimer_get_tick_count();
               if ((uint32_t)(now - time_after_trigger) >= sample_interval_ticks) {
-                  state = STATE_READ;
+                  sensor_task_state = STATE_READ;
               }
               else if ((uint32_t)(now - time_after_trigger) < sample_interval_ticks) {
                   if (!first_loop && !data_processed) {
+                      data_processed = true;
                       status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
                           printf("ERROR: Bad status byte 0x%02X\r\n", status);
@@ -369,7 +388,7 @@ void get_sensor_data_task(void *p_arg)
                   uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
                   if (remaining_ms < 1) remaining_ms = 1;
                   OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
-                  state = STATE_WAIT;
+                  sensor_task_state = STATE_WAIT;
               }
               else {
                   printf("ERROR: unexpected wait state condition\r\n");
@@ -384,11 +403,11 @@ void get_sensor_data_task(void *p_arg)
               if (read_ok) {
                   first_loop = false;
                   data_processed = false;
-                  state = STATE_DELAY;
+                  sensor_task_state = STATE_DELAY;
               }
               else if (!read_ok) {
                   printf("ERROR: I2C read failed\r\n");
-                  state = STATE_READ;
+                  sensor_task_state = STATE_DELAY;
               }
               else {
                   printf("ERROR: unexpected read state condition\r\n");
@@ -399,7 +418,7 @@ void get_sensor_data_task(void *p_arg)
           case STATE_DELAY: {
               uint32_t now = sl_sleeptimer_get_tick_count();
               if ((uint32_t)(now - cycle_start) >= total_interval_ticks) {
-                  state = STATE_WRITE;
+                  sensor_task_state = STATE_WRITE;
               }
               else if ((uint32_t)(now - cycle_start) < total_interval_ticks) {
                   RTOS_ERR yield_err;
@@ -407,7 +426,7 @@ void get_sensor_data_task(void *p_arg)
                   uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
                   if (remaining_ms < 1) remaining_ms = 1;
                   OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
-                  state = STATE_DELAY;
+                  sensor_task_state = STATE_DELAY;
               }
               else {
                   printf("ERROR: unexpected delay state condition\r\n");

@@ -72,25 +72,25 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_CONFIG: {   // reads if there is a config file, if there is it over-rides default run time variables
-          static uint32_t config_entry_tick = 0;
-          if (state_entry){
-              printf("S2: entered SYS_CONFIG\r\n");
-              config_entry_tick = sl_sleeptimer_get_tick_count();
-          }
-          if (mod_sd_is_open_AW()){
-              mod_sd_load_config_AW(&run_time_vars);
-              config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to defaut
-
-          }
-          else {
-              uint32_t elapsed_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count()-config_entry_tick);
-              if (elapsed_ms >= 3000u){ // 3000 ms unsigned integer = 3 sec
-                  printf("S2: SD not ready or avail, proceeding with defaults \r\n");
-              }
-              else {
-                  break;
-              }
-          }
+//          static uint32_t config_entry_tick = 0;
+//          if (state_entry){
+//              printf("S2: entered SYS_CONFIG\r\n");
+//              config_entry_tick = sl_sleeptimer_get_tick_count();
+//          }
+//          if (mod_sd_is_open_AW()){
+//              mod_sd_load_config_AW(&run_time_vars);
+//              config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to defaut
+//
+//          }
+//          else {
+//              uint32_t elapsed_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count()-config_entry_tick);
+//              if (elapsed_ms >= 3000u){ // 3000 ms unsigned integer = 3 sec
+//                  printf("S2: SD not ready or avail, proceeding with defaults \r\n");
+//              }
+//              else {
+//                  break;
+//              }
+//          }
 
           system_state = SYS_MEM;
           break;
@@ -105,7 +105,7 @@ static void executive_task(void *p_arg) {
         case SYS_INIT_ACQ_TASKS: {
           printf("S4: entered SYS_INIT_ACQ_TASKS\r\n");
           // tasks are suspended here right after their create functions !!!!
-          get_sensor_data_task_create(); get_sensor_data_task_suspend();
+          get_sensor_data_task_create(); get_sensor_data_task_suspend_on_boot();
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
           // TODO: add control task
@@ -141,6 +141,7 @@ static void executive_task(void *p_arg) {
               printf("logging=%d controller=%d\r\n",run_time_vars.logging_on_flg,run_time_vars.controller_on_flg);
               single_read_sensor_flag_copy = single_read_sensor_flag;
               
+              sensor_request_state_reset();
               get_sensor_data_task_resume();        // start reading from sensors and store on circular buffer
               // TODO: implement button task resume, make sure button functionality now just leaves SYS_ACQU
               
