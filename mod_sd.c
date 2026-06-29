@@ -61,6 +61,7 @@ static volatile uint8_t sd_write_prev = 0;
 static void mod_sd_open_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
 static char name_buf[16];                  // char array for building filename string "data_xxxx.csv"
+static int next_file_num = 0; // keep track of file numbering
 
 static RTOS_ERR err;
 //static FIL fp;
@@ -265,7 +266,7 @@ static void mod_sd_open_AW(void){
   FILINFO fno;                                // FatFS file info struct
 
   int file_num;
-  for (file_num = 0 ; file_num <= 9999; file_num++){ // find placement to create new file
+  for (file_num = next_file_num ; file_num <= 9999; file_num++){ // find placement to create new file
       snprintf(name_buf,sizeof(name_buf),"data_%04d.csv",file_num); // build filename string, %04d zero-pads the number
       mod_sd_ff_encode(name_buf,file_name,strlen(name_buf)); // convert string from char to TCHAR for FatFS
       FRESULT fr = f_stat(file_name,&fno);
@@ -285,6 +286,7 @@ static void mod_sd_open_AW(void){
   if(fres==FR_OK){
             GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
             sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
+            next_file_num=file_num+1;       // keep track of next file number
             f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
             f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall\r\n") - 1, &bw);
             printf("File created: %s \r\n", name_buf);
@@ -294,6 +296,22 @@ static void mod_sd_open_AW(void){
       GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
 }
+
+bool mod_sd_remount_and_open_AW(void){
+  FRESULT res = f_mount(&fat_fs, (TCHAR*)"", 1);
+  if (res != FR_OK) {
+      printf("Remount failed: %d\r\n", res);
+      return false;
+  }
+  mod_sd_open_AW();
+  if (!mod_sd_is_open_AW()) {
+      printf("File open failed after remount.\r\n");
+      return false;
+  }
+  return true;
+}
+
+uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
 
 void mod_sd_close_and_unmount_AW(void) {
     RTOS_ERR err;
@@ -349,22 +367,6 @@ bool mod_sd_write_AW(char *buf, int len){
   OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release sd_mutex lock, protecting fp so write and close cant overlap
   return successful_write;
 }
-
-bool mod_sd_remount_and_open_AW(void){
-  FRESULT res = f_mount(&fat_fs, (TCHAR*)"", 1);
-  if (res != FR_OK) {
-      printf("Remount failed: %d\r\n", res);
-      return false;
-  }
-  mod_sd_open_AW();
-  if (!mod_sd_is_open_AW()) {
-      printf("File open failed after remount.\r\n");
-      return false;
-  }
-  return true;
-}
-
-uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
 
 void mod_sd_enable_hardware_AW(void) {
   GPIO_PinModeSet(gpioPortH, 11, gpioModePushPull, 1); // LED, active low, starts OFF
