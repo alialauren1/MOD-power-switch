@@ -340,28 +340,38 @@ bool mod_sd_write_AW(char *buf, int len){
   OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire sd_mutex lock before touching fp, protecting fp so write and close cant overlap
 
   if(sd_file_open){
-      FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
-      FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
 
-      if(fres != FR_OK || fsync_res != FR_OK){ // if write or flush failed
-          if(sd_write_prev){ // if prev write successful,
-              sd_write_prev = 0; // note that the new write was a failure
+      if ((int)f_size(&fp) + len >= SD_FILE_MAX_SIZE) {
+          f_close(&fp);
+          sd_file_open = 0;
+          mod_sd_open_AW(); // find next file name and open it
+          printf("File size limit reached, opened: %s\r\n", name_buf);
+      }
+
+      FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
+      if (fres != FR_OK){
+          if(sd_write_prev){
+              sd_write_prev = 0;
               GPIO_PinOutSet(gpioPortH, 15);    // turn LED off, only on transition from ok to failed
               printf("SD write error: %d\r\n", fres);
           }
       }
-      else { // write and sync succeeded
-          if (f_size(&fp)>= SD_FILE_MAX_SIZE){
-                        f_close(&fp);
-                        sd_file_open = 0;
-                        mod_sd_open_AW(); // find next file name and open it
-                        printf("File size limit reached, opened: %s\r\n", name_buf);
-                    }
-          if(!sd_write_prev){
-              sd_write_prev = 1;                // if previous write was a failure, we need to turn the LED back on since now successful
-              GPIO_PinOutClear(gpioPortH, 15);  // turn LED on, only on transition from failed to ok
+      else {
+          FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
+          if (fsync_res != FR_OK){ // error handling
+              if(sd_write_prev){
+                  sd_write_prev=0;
+                  GPIO_PinOutSet(gpioPortH, 15);    // turn LED off, only on transition from ok to failed
+                  printf("SD sync error: %d\r\n", fsync_res);
+              }
           }
-          successful_write=true;
+          else { // LED handling
+              if(!sd_write_prev){
+                    sd_write_prev=1;
+                    GPIO_PinOutClear(gpioPortH, 15);  // turn LED on, only on transition from failed to ok
+              }
+              successful_write = true;
+          }
       }
   }
   OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);             // release sd_mutex lock, protecting fp so write and close cant overlap
