@@ -46,6 +46,7 @@ void mod_sd_close_and_unmount_AW(void);
 bool mod_sd_write_AW(char *buf, int len);
 bool mod_sd_remount_and_open_AW(void);
 uint8_t mod_sd_is_open_AW(void);
+bool mod_sd_init_done_AW(void);
 void mod_sd_enable_hardware_AW(void);
 void mod_sd_seed_rtc_AW(void);
 

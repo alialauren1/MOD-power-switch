@@ -57,11 +57,11 @@ static volatile FATFS fat_fs;
 static FIL fp;  // AW added
 static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant overlap
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
+static volatile bool sd_init_done = false;
 static volatile uint8_t sd_write_prev = 0;
 static void mod_sd_open_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
 static char name_buf[16];                  // char array for building filename string "data_xxxx.csv"
-static int next_file_num = 0; // keep track of file numbering
 
 static RTOS_ERR err;
 //static FIL fp;
@@ -210,6 +210,7 @@ void mod_sd_init_task()
 
 //  xTaskNotifyGive(mod_som_init_task_handle);
 
+  sd_init_done = true;
 
   for( ;; )
   {
@@ -265,15 +266,16 @@ static void mod_sd_open_AW(void){
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
   FILINFO fno;                                // FatFS file info struct
 
-  int file_num;
-  for (file_num = next_file_num ; file_num <= 9999; file_num++){ // find placement to create new file
-      snprintf(name_buf,sizeof(name_buf),"data_%04d.csv",file_num); // build filename string, %04d zero-pads the number
-      mod_sd_ff_encode(name_buf,file_name,strlen(name_buf)); // convert string from char to TCHAR for FatFS
-      FRESULT fr = f_stat(file_name,&fno);
-      if(fr==FR_NO_FILE){
-          break; // found placement to create new file, exit loop with file_num being set to that number
-      }
+  // find placement to create new file, binary search algorithm
+  int lo = 0, hi = 9999, file_num; // lo & hi define the search window, file_num holds the result
+  while (lo < hi) {
+      int mid = lo + (hi - lo) / 2;
+      snprintf(name_buf, sizeof(name_buf), "data_%04d.csv", mid); // build filename string in RAM, %04d zero-pads the number
+      mod_sd_ff_encode(name_buf, file_name, strlen(name_buf)); // encode filename for FatFS: converting string into format for FatFS storing it in file_name
+      if (f_stat(file_name, &fno) == FR_NO_FILE) hi = mid; // file missing: first unused slot is at mid or below, shrink top of window
+      else lo = mid + 1;                                     // file exists: first unused slot is above mid, shrink bottom of window
   }
+  file_num = lo;
 
   if(file_num>9999){
       printf("SD error:max file count has been reached \r\n");
@@ -281,12 +283,16 @@ static void mod_sd_open_AW(void){
       return;
   }
 
+  // loop exited with name_buf set to last mid, not file_num — rebuild with the correct number
+  snprintf(name_buf, sizeof(name_buf), "data_%04d.csv", file_num);
+  mod_sd_ff_encode(name_buf, file_name, strlen(name_buf));
+
+
   FRESULT fres = f_open(&fp, file_name, FA_CREATE_NEW | FA_WRITE); // create file
 
   if(fres==FR_OK){
             GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
             sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-            next_file_num=file_num+1;       // keep track of next file number
             f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
             f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall\r\n") - 1, &bw);
             printf("File created: %s \r\n", name_buf);
@@ -312,6 +318,7 @@ bool mod_sd_remount_and_open_AW(void){
 }
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
+bool mod_sd_init_done_AW(void) { return sd_init_done; }
 
 void mod_sd_close_and_unmount_AW(void) {
     RTOS_ERR err;

@@ -19,7 +19,7 @@ static CPU_STK executive_stk[EXECUTIVE_TASK_STK_SIZE];
 static OS_TCB executive_tcb;
 
 static system_state_t                system_state  = SYS_STARTUP;
-static volatile running_mode_t       running_mode  = RUNNING_MODE_IDLE;
+static volatile running_mode_t       running_mode  = RUNNING_MODE_AUTO_CONTROL_AND_LOG; // kind of redundant
 static run_time_variables_t          run_time_vars;
 
 static volatile bool single_read_sensor_flag = false;
@@ -53,7 +53,7 @@ static void executive_task(void *p_arg) {
           printf("S0: entered SYS_STARTUP\r\n");
 
           // defaults:
-          running_mode = RUNNING_MODE_IDLE;
+          running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG;
           run_time_vars.sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
           run_time_vars.logging_on_flg = true;
           run_time_vars.controller_on_flg = false;
@@ -116,8 +116,11 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_SELF_CHECK: {
-          printf("S5: entered SYS_SELF_CHECK\r\n");
-          system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
+          if (state_entry) {
+              printf("S5: entered SYS_SELF_CHECK\r\n"); }
+          if (mod_sd_init_done_AW()) {
+              system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
+          }
           break;
         }
 
