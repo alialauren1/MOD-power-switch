@@ -14,6 +14,11 @@ static int write_index  = 0;
 static int read_index  = 0;
 static volatile int count = 0;       // <-- volatile because both tasks read/write it
 
+static sensor_sample_t sensor_data_buffer2;
+static bool sensor_data_buffer2_ready = false;
+
+// -----------------------------------------
+
 void sensor_data_buffer_init(void) {
     write_index  = 0;
     read_index  = 0;
@@ -67,11 +72,20 @@ bool sensor_data_buffer_retrieve(sensor_sample_t *sample) { // copies buffer[rea
     return true;
 }
 
-//bool sensor_data_buffer_is_empty(void) {
-//  CORE_DECLARE_IRQ_STATE;
-//  bool empty;
-//  CORE_ENTER_ATOMIC();
-//  empty = (count == 0);
-//  CORE_EXIT_ATOMIC();
-//  return empty;
-//}
+// -----------------------------------------
+
+void sensor_data_buffer2_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) {
+    sensor_data_buffer2.p_mbar  = p_mbar;
+    sensor_data_buffer2.t_centi = t_centi;
+    sensor_data_buffer2.t_ticks = t_ticks;
+    sensor_data_buffer2.hall    = hall;
+    sensor_data_buffer2_ready   = true; // marks that sensor has stored a real reading
+}
+
+bool sensor_data_buffer2_retrieve(sensor_sample_t *sample) {
+    if (!sensor_data_buffer2_ready) return false; // wait until sensor has stored a real reading
+    *sample = sensor_data_buffer2;
+    sensor_data_buffer2_ready = false; // consumed — next retrieve will wait for the next store
+    return true;
+    // single_read_sensor_flag is cleared separately by the task after printing
+}
