@@ -10,7 +10,7 @@
 
 #include <stdbool.h>
 
-#define SAMPLE_RATE_HZ_DEFAULT 100 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
+#define SAMPLE_RATE_HZ_DEFAULT 1 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
 
 typedef enum {
   SYS_STARTUP,

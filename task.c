@@ -67,6 +67,10 @@ static uint32_t avg_sample_counter = 0;
 #define HALL_EFFECT_PIN   12           // change to your pin
 #define HALL_EFFECT_IDLE_STATE 1 // 1 = naturally HIGH (active-low output), 0 = naturally LOW (active high output)
 
+#define CONTROLLER_OUTPUT_PORT  gpioPortA
+#define CONTROLLER_OUTPUT_PIN   13
+// active-high "cut power" line: LOW (default) = instrument ON (fail-safe), HIGH = instrument OFF
+
 typedef enum {
     STATE_WRITE,
     STATE_WAIT,
@@ -91,6 +95,12 @@ static OS_TCB  retrieve_from_buf_tcb;
 #define RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE  1024u
 static CPU_STK retrieve_from_buf2_stk[RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf2_tcb;
+
+//For controller_task
+#define CONTROLLER_TASK_PRIO      15u
+#define CONTROLLER_TASK_STK_SIZE  1024u
+static CPU_STK controller_stk[CONTROLLER_TASK_STK_SIZE];
+static OS_TCB  controller_tcb;
 
 #define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 14
@@ -156,6 +166,7 @@ void get_sensor_data_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward declaration
 void button_stop_acqu_task(void *p_arg); // forward declaration
+void controller_task(void *p_arg); // forward declaration
 
 //----------------------------------Sub Tasks--------------------------------------------------------------
 
@@ -197,6 +208,8 @@ void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retr
 void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
 void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_acqu_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
+void controller_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&controller_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void controller_task_resume(void)  { RTOS_ERR err; OSTaskResume(&controller_tcb, &err); }
 
 static bool sensor_state_reset_on_resume = false;
 void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
@@ -596,5 +609,47 @@ void button_stop_acqu_task(void *p_arg) {
               button_press_count = 0;
       }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
+  }
+}
+
+void controller_task_create(void) {
+  RTOS_ERR err;
+
+  OSTaskCreate(&controller_tcb,
+               "Controller",
+               controller_task,
+               NULL,
+               CONTROLLER_TASK_PRIO,
+               &controller_stk[0],
+               (CONTROLLER_TASK_STK_SIZE / 10u),
+               CONTROLLER_TASK_STK_SIZE,
+               0u,
+               0u,
+               DEF_NULL,
+               OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
+               &err);
+}
+
+void controller_task(void *p_arg) {
+  (void)p_arg;
+  RTOS_ERR err;
+
+  CMU_ClockEnable(cmuClock_GPIO, true);
+  GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 0); // starts LOW = instrument ON (fail-safe default)
+
+  sensor_sample_t sample3;
+
+  while (1) {
+
+      while (sensor_data_buffer3_retrieve(&sample3)) {
+          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
+                 (sample3.p_mbar<0 ? '-':' '),
+                 (int)(abs(sample3.p_mbar) / 1000),
+                 (int)(abs(sample3.p_mbar) % 1000),
+                 sample3.hall);
+          // TODO: replace with real CTRL_OFF/CTRL_ON sub-FSM once switch_* config params exist
+      }
+
+      OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
 }
