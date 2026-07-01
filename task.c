@@ -103,11 +103,11 @@ static CPU_STK controller_stk[CONTROLLER_TASK_STK_SIZE];
 static OS_TCB  controller_tcb;
 
 #define SD_BUF_WRITE_SIZE 512
-#define SD_SAMPLES_PER_WRITE 14
+#define SD_SAMPLES_PER_WRITE 13
 static char sd_write_buf[SD_BUF_WRITE_SIZE];
 static int sd_buffer_sample_count = 0;
 static int sd_bytes_merged = 0;
-static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
+static char data_array_for_sd_card[38]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
 #define BUTTON_STOP_ACQU_TASK_PRIO      31u
@@ -273,6 +273,7 @@ void get_sensor_data_task(void *p_arg)
   uint32_t time_after_trigger = 0;
   uint32_t sample_interval_ticks = sl_sleeptimer_ms_to_tick(SAMPLE_INTERVAL_MS);
   uint32_t total_interval_ticks  = sl_sleeptimer_ms_to_tick(TOTAL_INTERVAL_MS);
+  int ctrl_out_midway = 0;
 
   // initialize others inside the while loop. then inside just modify the value.
   uint8_t status = 0;
@@ -350,12 +351,14 @@ void get_sensor_data_task(void *p_arg)
                           if (avg_sample_counter == (avg_sample_count+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
                                t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
                                hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
+                               ctrl_out_midway = GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN);
                           }
                           if (avg_sample_counter == avg_sample_count) {
                               if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
                                                   temp_sum/(int32_t)avg_sample_count,
                                                   t_ticks_mid,
-                                                  hall_midway)){ }
+                                                  hall_midway,
+                                                  ctrl_out_midway)){ }
                               else {
                                   freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
                                   t_sec_whole = t_ticks / freq;
@@ -371,14 +374,16 @@ void get_sensor_data_task(void *p_arg)
                                   (sensor_data_buffer2_store(pressure_sum/(int32_t)avg_sample_count,
                                                              temp_sum/(int32_t)avg_sample_count,
                                                              t_ticks_mid,
-                                                             hall_midway));
+                                                             hall_midway,
+                                                             ctrl_out_midway));
                               }
 
                               // controller buffer
                               sensor_data_buffer3_store(pressure_sum/(int32_t)avg_sample_count,
                                                          temp_sum/(int32_t)avg_sample_count,
                                                          t_ticks_mid,
-                                                         hall_midway);
+                                                         hall_midway,
+                                                         ctrl_out_midway);
 
                               pressure_sum = 0;
                               temp_sum = 0;
@@ -484,7 +489,7 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
               }
 
               int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                                           "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+                                           "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d,%d\r\n",
                                            (sample.p_mbar<0 ? '-':' '),
                                            (int)(abs(sample.p_mbar) / 1000),
                                            (int)(abs(sample.p_mbar) % 1000),
@@ -493,7 +498,8 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
                                            (uint32_t)(t_sec_whole / 1000000),
                                            (uint32_t)(t_sec_whole % 1000000),
                                            (uint32_t)t_sec_frac,
-                                           sample.hall);
+                                           sample.hall,
+                                           sample.ctrl_out);
 
               memcpy(sd_write_buf+(sd_buffer_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
                                                                                                   // ^ the addition moves destination pointer forward by bytes already accumulated
@@ -553,7 +559,7 @@ void retrieve_data_from_buffer2_and_single_read_task(void *p_arg) {
 
           if (system_get_single_read_flag()){
 
-              printf("%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+              printf("%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d,%d\r\n",
                              (sample2.p_mbar<0 ? '-':' '),
                              (int)(abs(sample2.p_mbar) / 1000),
                              (int)(abs(sample2.p_mbar) % 1000),
@@ -562,7 +568,8 @@ void retrieve_data_from_buffer2_and_single_read_task(void *p_arg) {
                              (uint32_t)(t_sec_whole / 1000000),
                              (uint32_t)(t_sec_whole % 1000000),
                              (uint32_t)t_sec_frac,
-                             sample2.hall);
+                             sample2.hall,
+                             sample2.ctrl_out);
 
               system_clear_single_read_flag(); //clear flag
           }
@@ -642,11 +649,11 @@ void controller_task(void *p_arg) {
   while (1) {
 
       while (sensor_data_buffer3_retrieve(&sample3)) {
-          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
-                 (sample3.p_mbar<0 ? '-':' '),
-                 (int)(abs(sample3.p_mbar) / 1000),
-                 (int)(abs(sample3.p_mbar) % 1000),
-                 sample3.hall);
+//          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
+//                 (sample3.p_mbar<0 ? '-':' '),
+//                 (int)(abs(sample3.p_mbar) / 1000),
+//                 (int)(abs(sample3.p_mbar) % 1000),
+//                 sample3.hall);
           // TODO: replace with real CTRL_OFF/CTRL_ON sub-FSM once switch_* config params exist
       }
 
