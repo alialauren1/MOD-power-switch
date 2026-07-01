@@ -38,4 +38,6 @@ void retrieve_buf2_task_resume(void);
 void sensor_request_state_reset(void);
 void get_sensor_data_task_suspend(void);
 
+bool keller_sensor_check(void);
+
 #endif /* TASK_H_ */

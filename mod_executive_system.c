@@ -117,7 +117,12 @@ static void executive_task(void *p_arg) {
 
         case SYS_SELF_CHECK: {
           if (state_entry) {
-              printf("S5: entered SYS_SELF_CHECK\r\n"); }
+              printf("S5: entered SYS_SELF_CHECK\r\n");
+              if (!keller_sensor_check()){
+                  system_state=SYS_ERR;
+                  break;
+              }
+          }
           if (mod_sd_init_done_AW()) {
               system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
           }

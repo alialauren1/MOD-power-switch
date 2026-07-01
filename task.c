@@ -108,7 +108,7 @@ static char data_array_for_sd_card[36]; // define at top of file and make static
 static CPU_STK button_stop_logging_stk[BUTTON_STOP_LOGGING_TASK_STK_SIZE];
 static OS_TCB  button_stop_logging_tcb;
 
-//For Keller_get_pressure_task
+//For get_sensor_data_task
 static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
 { // Send a zero-length write to confirm the sensor is on the bus
   I2C_TransferSeq_TypeDef seq;
@@ -218,6 +218,8 @@ void button_stop_logging_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button
 
 static bool sensor_state_reset_on_resume = false;
 void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
+
+bool keller_sensor_check(void) { return keller_p_sensor_init(); }
 
 static keller_state_t sensor_task_state = STATE_WRITE; // start on this state
 
