@@ -17,6 +17,8 @@ static volatile int count = 0;       // <-- volatile because both tasks read/wri
 static sensor_sample_t sensor_data_buffer2;
 static bool sensor_data_buffer2_ready = false;
 
+static sensor_sample_t sensor_data_buffer3;
+static bool sensor_data_buffer3_ready = false;
 // -----------------------------------------
 
 void sensor_data_buffer_init(void) {
@@ -86,6 +88,25 @@ bool sensor_data_buffer2_retrieve(sensor_sample_t *sample) {
     if (!sensor_data_buffer2_ready) return false; // wait until sensor has stored a real reading
     *sample = sensor_data_buffer2;
     sensor_data_buffer2_ready = false; // consumed — next retrieve will wait for the next store
+    return true;
+    // single_read_sensor_flag is cleared separately by the task after printing
+}
+
+
+// -----------------------------------------
+
+void sensor_data_buffer3_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) {
+    sensor_data_buffer3.p_mbar  = p_mbar;
+    sensor_data_buffer3.t_centi = t_centi;
+    sensor_data_buffer3.t_ticks = t_ticks;
+    sensor_data_buffer3.hall    = hall;
+    sensor_data_buffer3_ready   = true; // marks that sensor has stored a real reading
+}
+
+bool sensor_data_buffer3_retrieve(sensor_sample_t *sample) {
+    if (!sensor_data_buffer3_ready) return false; // wait until sensor has stored a real reading
+    *sample = sensor_data_buffer3;
+    sensor_data_buffer3_ready = false; // consumed — next retrieve will wait for the next store
     return true;
     // single_read_sensor_flag is cleared separately by the task after printing
 }

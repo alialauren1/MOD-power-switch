@@ -352,12 +352,20 @@ void get_sensor_data_task(void *p_arg)
                                          (uint32_t)(t_sec_whole % 1000000),
                                          (uint32_t)t_sec_frac);
                                        }
+
+                              // single read buffer
                               if (system_get_single_read_flag()){
                                   (sensor_data_buffer2_store(pressure_sum/(int32_t)avg_sample_count,
                                                              temp_sum/(int32_t)avg_sample_count,
                                                              t_ticks_mid,
                                                              hall_midway));
                               }
+
+                              // controller buffer
+                              sensor_data_buffer3_store(pressure_sum/(int32_t)avg_sample_count,
+                                                         temp_sum/(int32_t)avg_sample_count,
+                                                         t_ticks_mid,
+                                                         hall_midway);
 
                               pressure_sum = 0;
                               temp_sum = 0;
