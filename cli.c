@@ -53,7 +53,6 @@ void echo_int(sl_cli_command_arg_t *arguments);
 void sd_read_cmd(sl_cli_command_arg_t *arguments);
 //void sd_info_cmd(sl_cli_command_arg_t *arguments);
 
-void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments);
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments);
 void get_time_cmd(sl_cli_command_arg_t *arguments);
 void get_open_file_name_cmd(sl_cli_command_arg_t *arguments);
@@ -113,12 +112,6 @@ static const sl_cli_command_info_t cmd__sd_read = \
 //                 "",
 //                 { SL_CLI_ARG_END, });
 
-static const sl_cli_command_info_t cmd__sd_close_unmount = \
-  SL_CLI_COMMAND(sd_close_and_unmount_cmd,
-                 "close and unmount the SD card",
-                 "",
-                 { SL_CLI_ARG_END, });
-
 static const sl_cli_command_info_t cmd__sd_set_time = \
   SL_CLI_COMMAND(sd_set_time_cmd,
                  "set time for current sd card data run in the form of:",
@@ -164,7 +157,6 @@ static sl_cli_command_entry_t a_table[] = {
 //  { "sd_write", &cmd__sd_write, false },
   { "sd_read", &cmd__sd_read, false },
 //  { "sd_info", &cmd__sd_info, false },
-  { "sd_close_unmount", &cmd__sd_close_unmount, false },
   { "set_time", &cmd__sd_set_time, false },
   { "get_time", &cmd__get_time, false },
   { "get_file_name", &cmd__get_open_file_name_cmd, false },
@@ -179,8 +171,6 @@ static sl_cli_command_group_t a_group = {
   false,
   a_table
 };
-
-static bool confirm = false;
 
 /*******************************************************************************
  *************************  EXPORTED VARIABLES   *******************************
@@ -446,17 +436,6 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments)
 //}
 
 /****************************************************************************//**
- * Callback for sd_unmount_cmd
- *
- * The command is used to unmount and close the SD card.
- ******************************************************************************/
-void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments)
-{
-  (void)arguments; // must accept as param but no need to use
-  system_request_stop_acquisition();
-}
-
-/****************************************************************************//**
  * Callback for sd_set_time_cmd
  *
  * The command is used to set the time.
@@ -612,7 +591,6 @@ void cli_app_init(void)
   status = sl_cli_command_add_command_group(sl_cli_inst_handle, command_group);
   EFM_ASSERT(status);
 
-//  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
   printf("---------------------------------\r\n");
   printf("  Started CLI Micrium OS\r\n");
 

@@ -46,7 +46,7 @@
 
 //For Keller_get_pressure_taskd
 #define SENSOR_I2C_ADDR     0x40
-//#define SAMPLE_INTERVAL_MS  9         // use min 8ms — satisfies 8ms minimum conversion time
+
 #define STATUS_FIXED_BIT    (1 << 6)  // always 1 on real Keller sensor
 #define STATUS_BUSY_BIT     (1 << 5)  // 1 = sensor still converting
 #define STATUS_MEM_ERR_BIT  (1 << 2)  // 1 = internal checksum failed
@@ -606,7 +606,5 @@ void button_stop_acqu_task(void *p_arg) {
               button_press_count = 0;
       }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
-
-      // OSTaskDelete put here
   }
 }
