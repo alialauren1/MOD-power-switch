@@ -55,6 +55,7 @@ OS_SEM sync_sem;
 static volatile FATFS fat_fs;
 
 static FIL fp;  // AW added
+static FIL cfg_fp;  // config file handle, static to avoid putting large FIL struct on stack
 static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant overlap
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
 static volatile bool sd_init_done = false;
@@ -422,86 +423,85 @@ void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t h
   }
 }
 
-//void mod_sd_load_config_AW(run_time_variables_t *cfg){
-//  FIL    cfg_fp;
-//  char   cfg_buf[64];
-//  UINT   br;
-//  TCHAR  cfg_name[16];
-//
-//  mod_sd_ff_encode("config.cfg", cfg_name, strlen("config.cfg"));
-//
-//  FRESULT res = f_open(&cfg_fp, cfg_name, FA_READ);
-//
-//  if (res == FR_NO_FILE){
-//      // config.cfg doesn't exist yet, create it with defaults
-//      res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_NEW);
-//       if (res == FR_OK) {
-//           UINT bw;
-//           char line[64];
-//           int len = snprintf(line, sizeof(line),
-//               "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
-//               cfg->sample_rate_hz,
-//               (int)cfg->logging_on_flg,
-//               (int)cfg->controller_on_flg);
-//           f_write(&cfg_fp, line, len, &bw);
-//           f_close(&cfg_fp);
-//           printf("config.cfg created with defaults\r\n");
-//       } else {
-//           printf("config.cfg create failed: %d\r\n", res);
-//       }
-//  }
-//  else if (res == FR_OK) {
-//      f_read(&cfg_fp, cfg_buf, sizeof(cfg_buf) - 1, &br);
-//      cfg_buf[br] = '\0';  // null-terminate so strtok and sscanf treat it as a valid C string
-//      f_close(&cfg_fp);
-//
-//      unsigned int parsed_hz = -1;
-//      int parsed_logging = -1;
-//      int parsed_controller = -1;
-//
-//      // parse line by line — overwrites in memory the fields that exist in the file,
-//      // leaving the rest at the defaults set in SYS_STARTUP
-//      char *line = strtok(cfg_buf, "\r\n");
-//      while (line != NULL) {
-//          if (sscanf(line, "sample_rate_hz=%d", &parsed_hz) == 1) {
-//              if (parsed_hz >= 1 && parsed_hz <= 100) cfg->sample_rate_hz = parsed_hz;
-//              else {
-//                  cfg->sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
-//                  printf("config.cfg: sample_rate_hz out of range, using default\r\n");
-//              }
-//          }
-//          if (sscanf(line, "logging_on_flg=%d", &parsed_logging) == 1) {
-//              if (parsed_logging == 0 || parsed_logging == 1) cfg->logging_on_flg = (bool)parsed_logging;
-//          }
-//          if (sscanf(line, "controller_on_flg=%d", &parsed_controller) == 1) {
-//              if (parsed_controller == 0 || parsed_controller == 1) cfg->controller_on_flg = (bool)parsed_controller;
-//          }
-//          line = strtok(NULL, "\r\n");  // advance to next line; NULL continues from last strtok position
-//      }
-//
-//      if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1) {
-//          FRESULT rewrite_res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_ALWAYS);
-//          if (rewrite_res == FR_OK) {
-//              UINT bw;
-//              char out_line[64];
-//              int len = snprintf(out_line, sizeof(out_line),
-//                  "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
-//                  cfg->sample_rate_hz,
-//                  (int)cfg->logging_on_flg,
-//                  (int)cfg->controller_on_flg);
-//              f_write(&cfg_fp, out_line, len, &bw);
-//              f_close(&cfg_fp);
-//              printf("config.cfg updated with missing fields\r\n");
-//          } else {
-//              printf("config.cfg update failed: %d\r\n", rewrite_res);
-//          }
-//      }
-//      printf("config.cfg loaded\r\n");
-//  }
-//  else {
-//      printf("config.cfg open error: %d, using defaults\r\n", res);
-//  }
-//
-//
-//}
-//
+void mod_sd_load_config_AW(run_time_variables_t *cfg){
+  char   cfg_buf[64];
+  UINT   br;
+  TCHAR  cfg_name[16];
+
+  mod_sd_ff_encode("config.cfg", cfg_name, strlen("config.cfg"));
+
+  FRESULT res = f_open(&cfg_fp, cfg_name, FA_READ);
+
+  if (res == FR_NO_FILE){
+      // config.cfg doesn't exist yet, create it with defaults
+      res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_NEW);
+       if (res == FR_OK) {
+           UINT bw;
+           char line[64];
+           int len = snprintf(line, sizeof(line),
+               "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
+               cfg->sample_rate_hz,
+               (int)cfg->logging_on_flg,
+               (int)cfg->controller_on_flg);
+           f_write(&cfg_fp, line, len, &bw);
+           f_close(&cfg_fp);
+           printf("config.cfg created with defaults\r\n");
+       } else {
+           printf("config.cfg create failed: %d\r\n", res);
+       }
+  }
+  else if (res == FR_OK) {
+      f_read(&cfg_fp, cfg_buf, sizeof(cfg_buf) - 1, &br);
+      cfg_buf[br] = '\0';  // null-terminate so strtok and sscanf treat it as a valid C string
+      f_close(&cfg_fp);
+
+      unsigned int parsed_hz = -1;
+      int parsed_logging = -1;
+      int parsed_controller = -1;
+
+      // parse line by line — overwrites in memory the fields that exist in the file,
+      // leaving the rest at the defaults set in SYS_STARTUP
+      char *line = strtok(cfg_buf, "\r\n");
+      while (line != NULL) {
+          if (sscanf(line, "sample_rate_hz=%u", &parsed_hz) == 1) {
+              if (parsed_hz >= 1 && parsed_hz <= 100) cfg->sample_rate_hz = parsed_hz;
+              else {
+                  cfg->sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
+                  printf("config.cfg: sample_rate_hz out of range, using default\r\n");
+              }
+          }
+          if (sscanf(line, "logging_on_flg=%d", &parsed_logging) == 1) {
+              if (parsed_logging == 0 || parsed_logging == 1) cfg->logging_on_flg = (bool)parsed_logging;
+          }
+          if (sscanf(line, "controller_on_flg=%d", &parsed_controller) == 1) {
+              if (parsed_controller == 0 || parsed_controller == 1) cfg->controller_on_flg = (bool)parsed_controller;
+          }
+          line = strtok(NULL, "\r\n");  // advance to next line; NULL continues from last strtok position
+      }
+
+      if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1) {
+          FRESULT rewrite_res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_ALWAYS);
+          if (rewrite_res == FR_OK) {
+              UINT bw;
+              char out_line[64];
+              int len = snprintf(out_line, sizeof(out_line),
+                  "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
+                  cfg->sample_rate_hz,
+                  (int)cfg->logging_on_flg,
+                  (int)cfg->controller_on_flg);
+              f_write(&cfg_fp, out_line, len, &bw);
+              f_close(&cfg_fp);
+              printf("config.cfg updated with missing fields\r\n");
+          } else {
+              printf("config.cfg update failed: %d\r\n", rewrite_res);
+          }
+      }
+      printf("config.cfg loaded\r\n");
+  }
+  else {
+      printf("config.cfg open error: %d, using defaults\r\n", res);
+  }
+
+
+}
+

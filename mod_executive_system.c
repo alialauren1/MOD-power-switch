@@ -76,26 +76,13 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_CONFIG: {   // reads if there is a config file, if there is it over-rides default run time variables
-//          static uint32_t config_entry_tick = 0;
-//          if (state_entry){
-//              printf("S2: entered SYS_CONFIG\r\n");
-//              config_entry_tick = sl_sleeptimer_get_tick_count();
-//          }
-//          if (mod_sd_is_open_AW()){
-//              mod_sd_load_config_AW(&run_time_vars);
-//              config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to defaut
-//
-//          }
-//          else {
-//              uint32_t elapsed_ms = sl_sleeptimer_tick_to_ms(sl_sleeptimer_get_tick_count()-config_entry_tick);
-//              if (elapsed_ms >= 3000u){ // 3000 ms unsigned integer = 3 sec
-//                  printf("S2: SD not ready or avail, proceeding with defaults \r\n");
-//              }
-//              else {
-//                  break;
-//              }
-//          }
-
+          printf("S2: entered SYS_CONFIG\r\n");
+          if (mod_sd_is_open_AW()) {
+              mod_sd_load_config_AW(&run_time_vars);
+              config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to default
+          } else {
+              printf("S2: SD not available, using defaults\r\n");
+          }
           system_state = SYS_MEM;
           break;
         }
