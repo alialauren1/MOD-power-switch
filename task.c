@@ -59,12 +59,12 @@
 
 static uint32_t sample_rate_hz  = SAMPLE_RATE_HZ_DEFAULT;    // default, overwritten by config file on startup
 static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalculated by apply_config_sample_rate_task() after config loads
-static int32_t  pressure_sum     = 0;     // ← add
-static int32_t  temp_sum         = 0;     // ← add
-static uint32_t avg_sample_counter = 0;   // ← add
+static int32_t  pressure_sum     = 0;
+static int32_t  temp_sum         = 0;
+static uint32_t avg_sample_counter = 0;
 
 #define HALL_EFFECT_PORT  gpioPortA   // change to your pin
-#define HALL_EFFECT_PIN   8           // change to your pin
+#define HALL_EFFECT_PIN   12           // change to your pin
 #define HALL_EFFECT_IDLE_STATE 1 // 1 = naturally HIGH (active-low output), 0 = naturally LOW (active high output)
 
 typedef enum {
