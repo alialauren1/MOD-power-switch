@@ -358,20 +358,22 @@ bool mod_sd_write_AW(char *buf, int len){
 
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
       if (fres != FR_OK){
-          if(sd_write_prev){
-              sd_write_prev = 0;
-              GPIO_PinOutSet(gpioPortH, 15);    // turn LED off, only on transition from ok to failed
-              printf("SD write error: %d\r\n", fres);
-          }
+          sd_write_prev = 0;
+          GPIO_PinOutSet(gpioPortH, 15); // turn LED off, only on transition from ok to failed
+          printf("SD write error: %d\r\n", fres);
+          f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
+          sd_file_open = 0;    // clear flag to match closed state
+          mod_sd_open_AW();    // open a fresh file so recovery is automatic
       }
       else {
           FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
-          if (fsync_res != FR_OK){ // error handling
-              if(sd_write_prev){
-                  sd_write_prev=0;
-                  GPIO_PinOutSet(gpioPortH, 15);    // turn LED off, only on transition from ok to failed
-                  printf("SD sync error: %d\r\n", fsync_res);
-              }
+          if (fsync_res != FR_OK){
+              sd_write_prev=0;
+              GPIO_PinOutSet(gpioPortH, 15);
+              printf("SD sync error: %d\r\n", fsync_res);
+              f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
+              sd_file_open = 0;    // clear flag to match closed state
+              mod_sd_open_AW();    // open a fresh file so recovery is automatic
           }
           else { // LED handling
               if(!sd_write_prev){
