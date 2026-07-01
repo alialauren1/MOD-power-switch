@@ -64,11 +64,15 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_INIT_INFRA_TASKS: {
-          printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
-          cli_app_init();
-          mod_sd_create_init_task();
-          system_state = SYS_CONFIG;
-          break;
+            if (state_entry) {
+                printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
+                cli_app_init();
+                mod_sd_create_init_task();
+            }
+            if (mod_sd_init_done_AW()) {
+                system_state = SYS_CONFIG;
+            }
+            break;
         }
 
         case SYS_CONFIG: {   // reads if there is a config file, if there is it over-rides default run time variables
@@ -122,8 +126,6 @@ static void executive_task(void *p_arg) {
                   system_state=SYS_ERR;
                   break;
               }
-          }
-          if (mod_sd_init_done_AW()) {
               system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE;
           }
           break;
