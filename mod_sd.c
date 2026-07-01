@@ -292,11 +292,12 @@ static void mod_sd_open_AW(void){
   FRESULT fres = f_open(&fp, file_name, FA_CREATE_NEW | FA_WRITE); // create file
 
   if(fres==FR_OK){
-            GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
-            sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-            f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
-            f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall\r\n") - 1, &bw);
-            printf("File created: %s \r\n", name_buf);
+      GPIO_PinOutSet(gpioPortH, 10);    // clear red error LED on successful open
+      GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
+      sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
+      f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
+      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall\r\n") - 1, &bw);
+      printf("File created: %s \r\n", name_buf);
   }
   else {
       printf("File open has failed: %d\r\n",fres);
