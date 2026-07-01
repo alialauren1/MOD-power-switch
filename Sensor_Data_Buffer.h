@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define SENSOR_DATA_BUFFER_SIZE 24 // number of samples it can store
+#define SENSOR_DATA_BUFFER_SIZE 30 // number of samples it can store
 
 typedef struct {
     int32_t p_mbar;
