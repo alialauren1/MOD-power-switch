@@ -92,9 +92,6 @@ static OS_TCB  retrieve_from_buf_tcb;
 static CPU_STK retrieve_from_buf2_stk[RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf2_tcb;
 
-static sensor_sample_t sensor_data_buffer2;
-static bool sensor_data_buffer2_ready = false;
-
 #define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 14
 static char sd_write_buf[SD_BUF_WRITE_SIZE];
@@ -191,21 +188,6 @@ void config_sample_rate_task(unsigned int rate_hz) {
     avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
 }
 
-void sensor_data_buffer2_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) {
-    sensor_data_buffer2.p_mbar  = p_mbar;
-    sensor_data_buffer2.t_centi = t_centi;
-    sensor_data_buffer2.t_ticks = t_ticks;
-    sensor_data_buffer2.hall    = hall;
-    sensor_data_buffer2_ready   = true; // marks that sensor has stored a real reading
-}
-
-bool sensor_data_buffer2_retrieve(sensor_sample_t *sample) {
-    if (!sensor_data_buffer2_ready) return false; // wait until sensor has stored a real reading
-    *sample = sensor_data_buffer2;
-    sensor_data_buffer2_ready = false; // consumed — next retrieve will wait for the next store
-    return true;
-    // single_read_sensor_flag is cleared separately by the task after printing
-}
 
 void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
