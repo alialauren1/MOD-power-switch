@@ -60,6 +60,9 @@ static void executive_task(void *p_arg) {
           run_time_vars.sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
           run_time_vars.logging_on_flg = true;
           run_time_vars.controller_on_flg = true;
+          run_time_vars.switch_direction = SWITCH_DIRECTION_BOTH;
+          run_time_vars.switch_depth_mbar = 50000; // 50 bar
+          run_time_vars.switch_lag_mbar = 2000; // 2 bar
           single_read_sensor_flag = false;
 
           system_state = SYS_INIT_INFRA_TASKS;

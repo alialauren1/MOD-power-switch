@@ -426,8 +426,16 @@ void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t h
   }
 }
 
+static const char* switch_direction_to_str(switch_direction_t d) {
+    switch (d) {
+        case SWITCH_DIRECTION_UPCAST:   return "UPCAST";
+        case SWITCH_DIRECTION_DOWNCAST: return "DOWNCAST";
+        default:                        return "BOTH";
+    }
+}
+
 void mod_sd_load_config_AW(run_time_variables_t *cfg){
-  char   cfg_buf[64];
+  char   cfg_buf[200];
   UINT   br;
   TCHAR  cfg_name[16];
 
@@ -440,12 +448,16 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
       res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_NEW);
        if (res == FR_OK) {
            UINT bw;
-           char line[64];
+           char line[200];
            int len = snprintf(line, sizeof(line),
-               "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
+               "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n"
+               "switch_direction=%s\r\nswitch_depth_mbar=%ld\r\nswitch_lag_mbar=%ld\r\n",
                cfg->sample_rate_hz,
                (int)cfg->logging_on_flg,
-               (int)cfg->controller_on_flg);
+               (int)cfg->controller_on_flg,
+               switch_direction_to_str(cfg->switch_direction),
+               (long)cfg->switch_depth_mbar,
+               (long)cfg->switch_lag_mbar);
            f_write(&cfg_fp, line, len, &bw);
            f_close(&cfg_fp);
            printf("config.cfg created with defaults\r\n");
@@ -461,6 +473,9 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
       unsigned int parsed_hz = -1;
       int parsed_logging = -1;
       int parsed_controller = -1;
+      long parsed_depth_mbar = -1;
+      long parsed_lag_mbar = -1;
+      char switch_direction_str[16] = ""; // empty string = not found in file
 
       // parse line by line — overwrites in memory the fields that exist in the file,
       // leaving the rest at the defaults set in SYS_STARTUP
@@ -479,19 +494,34 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
           if (sscanf(line, "controller_on_flg=%d", &parsed_controller) == 1) {
               if (parsed_controller == 0 || parsed_controller == 1) cfg->controller_on_flg = (bool)parsed_controller;
           }
+          if (sscanf(line, "switch_direction=%15s", switch_direction_str) == 1) {
+              if (strcmp(switch_direction_str, "UPCAST") == 0) cfg->switch_direction = SWITCH_DIRECTION_UPCAST;
+              else if (strcmp(switch_direction_str, "DOWNCAST") == 0) cfg->switch_direction = SWITCH_DIRECTION_DOWNCAST;
+              else cfg->switch_direction = SWITCH_DIRECTION_BOTH;
+          }
+          if (sscanf(line, "switch_depth_mbar=%ld", &parsed_depth_mbar) == 1) {
+              cfg->switch_depth_mbar = (int32_t)parsed_depth_mbar;
+          }
+          if (sscanf(line, "switch_lag_mbar=%ld", &parsed_lag_mbar) == 1) {
+              cfg->switch_lag_mbar = (int32_t)parsed_lag_mbar;
+          }
           line = strtok(NULL, "\r\n");  // advance to next line; NULL continues from last strtok position
       }
 
-      if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1) {
+      if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1|| switch_direction_str[0] == '\0' || parsed_depth_mbar == -1 || parsed_lag_mbar == -1) {
           FRESULT rewrite_res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_ALWAYS);
           if (rewrite_res == FR_OK) {
               UINT bw;
-              char out_line[64];
+              char out_line[200];
               int len = snprintf(out_line, sizeof(out_line),
-                  "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
+                  "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n"
+                  "switch_direction=%s\r\nswitch_depth_mbar=%ld\r\nswitch_lag_mbar=%ld\r\n",
                   cfg->sample_rate_hz,
                   (int)cfg->logging_on_flg,
-                  (int)cfg->controller_on_flg);
+                  (int)cfg->controller_on_flg,
+                  switch_direction_to_str(cfg->switch_direction),
+                  (long)cfg->switch_depth_mbar,
+                  (long)cfg->switch_lag_mbar);
               f_write(&cfg_fp, out_line, len, &bw);
               f_close(&cfg_fp);
               printf("config.cfg updated with missing fields\r\n");
