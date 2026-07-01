@@ -30,6 +30,8 @@
 
 #include "mod_sd.h"
 #include "sl_sleeptimer.h"
+#include "task.h"
+#include "mod_executive_system.h"
 
 /*******************************************************************************
  *******************************   DEFINES   ***********************************
@@ -55,6 +57,9 @@ void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments);
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments);
 void get_time_cmd(sl_cli_command_arg_t *arguments);
 void get_open_file_name_cmd(sl_cli_command_arg_t *arguments);
+void start_acquisition_cmd(sl_cli_command_arg_t *arguments);
+void stop_acquisition_cmd(sl_cli_command_arg_t *arguments);
+void read_sensors_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -132,6 +137,24 @@ static const sl_cli_command_info_t cmd__get_open_file_name_cmd = \
                  " ",
                  { SL_CLI_ARG_END });
 
+static const sl_cli_command_info_t cmd__start_acquisition = \
+  SL_CLI_COMMAND(start_acquisition_cmd,
+                 "start data acquisition",
+                 "",
+                 { SL_CLI_ARG_END, });
+
+static const sl_cli_command_info_t cmd__stop_acquisition = \
+  SL_CLI_COMMAND(stop_acquisition_cmd,
+                 "stop data acquisition",
+                 "",
+                 { SL_CLI_ARG_END, });
+
+static const sl_cli_command_info_t cmd__read_sensors = \
+  SL_CLI_COMMAND(read_sensors_cmd,
+                 "take a single reading from sensors",
+                 "",
+                 { SL_CLI_ARG_END, });
+
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
   { "echo_int", &cmd__echoint, false },
@@ -145,6 +168,9 @@ static sl_cli_command_entry_t a_table[] = {
   { "set_time", &cmd__sd_set_time, false },
   { "get_time", &cmd__get_time, false },
   { "get_file_name", &cmd__get_open_file_name_cmd, false },
+  { "start_acqu", &cmd__start_acquisition, false },
+  { "stop_acqu",  &cmd__stop_acquisition,  false },
+  { "read_sensors",    &cmd__read_sensors,    false },
   { NULL, NULL, false },
 };
 
@@ -427,7 +453,7 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments)
 void sd_close_and_unmount_cmd(sl_cli_command_arg_t *arguments)
 {
   (void)arguments; // must accept as param but no need to use
-  mod_sd_close_and_unmount_AW();
+  system_request_stop_acquisition();
 }
 
 /****************************************************************************//**
@@ -484,9 +510,94 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments){
       printf("Writing to: %s\r\n", mod_sd_get_filename_AW());
   }
   else {
-      printf("No file is open");
+      printf("No file is open\r\n");
   }
 }
+
+/****************************************************************************//**
+ * Callback for start_acquisition_cmd
+ *
+ * The command is used to start acquisition tasks
+ ******************************************************************************/
+void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+
+    // This is to ensure you cant run this command prior to completing init states
+    system_state_t state = system_get_state();
+    if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
+        printf("command not available: system not fully initialized\r\n");
+        return;
+    }
+
+
+    if (system_get_state()== SYS_ACQU){
+        if (system_get_running_mode() == RUNNING_MODE_IDLE) {
+            system_request_start_acquisition();
+            printf("start_acquisition requested, already in SYS_ACQU but still idle running mode, changing to auto control and log\r\n");
+        }
+        else {
+            printf("start_acquisition requested, already in SYS_ACQU and auto control and log running mode\r\n");
+        }
+    }
+    else {
+        system_request_start_acquisition();
+        printf("start_acquisition requested, changed running_mode to ..AUTO_CONTROL_AND_LOG\r\n");
+    }
+}
+
+/****************************************************************************//**
+ * Callback for stop_acquisition_cmd
+ *
+ * The command is used to stop acquisition tasks
+ ******************************************************************************/
+void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+
+    // This is to ensure you cant run this command prior to completing init states
+    system_state_t state = system_get_state();
+    if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
+        printf("command not available: system not fully initialized\r\n");
+        return;
+    }
+
+
+    if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
+        printf("stop_acquisition requested, already stopped\r\n");
+    }
+    else if (system_get_running_mode() == RUNNING_MODE_IDLE){
+        printf("stop_acquisition requested, already in running_mode idle (in SYS_ACQ for temporary single read)\r\n");
+    }
+    else {
+        system_request_stop_acquisition();
+        printf("stop_acquisition requested, changed running_mode to ..IDLE\r\n");
+    }
+}
+
+/****************************************************************************//**
+ * Callback for read_sensors_cmd
+ *
+ * The command is used to read a single set of sensor values
+ ******************************************************************************/
+void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+
+    // This is to ensure you cant run this command prior to completing init states
+    system_state_t state = system_get_state();
+    if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
+        printf("command not available: system not fully initialized\r\n");
+        return;
+    }
+
+
+    if (system_get_state()== SYS_RUNNING_MODE_CHECK_AND_IDLE){
+        printf("single read requested, in SYS_IDLE will go to SYS_ACQU state temporarily\r\n");
+    }
+    else {
+        printf("single read requested, in SYS_ACQU will print next averaged value\r\n");
+    }
+    system_request_single_read(); //sets flag to true
+}
+
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
  ******************************************************************************/
@@ -503,17 +614,10 @@ void cli_app_init(void)
 
 //  printf("\r\nStarted CLI Micrium OS Example\r\n\r\n");
   printf("---------------------------------\r\n");
-  printf("---------------------------------\r\n");
-  printf("Started CLI Micrium OS\r\n");
+  printf("  Started CLI Micrium OS\r\n");
 
-  printf("Useful CLI Options:\r\n");
-  printf("- set_time to set the time of the sd card\r\n");
-  printf("- get_time to get the current system time\r\n");
-  printf("- get_file_name to see what file we are writing to\r\n");
-  printf("- sd_close_unmount to close and unmount the sd card to prevent corruption\r\n\r\n");
-
-  printf("Instructions:\r\n");
-  printf("1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
-  printf("2. Use set_time to document time during data collection\r\n");
+  printf("  Instructions:\r\n");
+  printf("  1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("  2. Use set_time to document time during data collection\r\n");
   printf("---------------------------------\r\n");
 }

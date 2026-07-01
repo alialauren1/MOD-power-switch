@@ -36,12 +36,13 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "Keller_Pressure_Buffer.h"
 #include <stdlib.h>
 #include "mod_sd.h"
 #include <string.h>
+#include <Sensor_Data_Buffer.h>
 #include "em_gpio.h"
 #include "em_cmu.h"
+#include "mod_executive_system.h"
 
 //For Keller_get_pressure_taskd
 #define SENSOR_I2C_ADDR     0x40
@@ -54,8 +55,13 @@
 #define SAMPLE_INTERVAL_MS  8
 #define TOTAL_INTERVAL_MS   10 // per sample
 
-#define SAMPLE_RATE_SEC 1 // minimum allowed is 0.01 seconds because that will be one sample
-#define AVG_SAMPLE_COUNT ((SAMPLE_RATE_SEC*1000)/TOTAL_INTERVAL_MS) // amount of samples that we use to average before printing
+#define AVG_SAMPLE_COUNT_DEFAULT ((1000 / SAMPLE_RATE_HZ_DEFAULT) / TOTAL_INTERVAL_MS); // amnt of samples used to avg, calculated from sample_rate_hz after config loads
+
+static uint32_t sample_rate_hz  = SAMPLE_RATE_HZ_DEFAULT;    // default, overwritten by config file on startup
+static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalculated by apply_config_sample_rate_task() after config loads
+static int32_t  pressure_sum     = 0;     // ← add
+static int32_t  temp_sum         = 0;     // ← add
+static uint32_t avg_sample_counter = 0;   // ← add
 
 #define HALL_EFFECT_PORT  gpioPortA   // change to your pin
 #define HALL_EFFECT_PIN   8           // change to your pin
@@ -69,37 +75,40 @@ typedef enum {
 } keller_state_t;
 
 //For Keller_get_pressure_task_create
-#define KELLER_GET_PRESSURE_TASK_PRIO      11u
-#define KELLER_GET_PRESSURE_TASK_STK_SIZE  1024u
-static CPU_STK keller_stk[KELLER_GET_PRESSURE_TASK_STK_SIZE];
-static OS_TCB  keller_tcb;
+#define GET_SENSOR_DATA_TASK_PRIO      11u
+#define GET_SENSOR_DATA_TASK_STK_SIZE  1024u
+static CPU_STK sensor_stk[GET_SENSOR_DATA_TASK_STK_SIZE];
+static OS_TCB  sensor_tcb;
 
 //For Printing Pressure tasks
-#define RETRIEVE_P_FROM_BUF_TASK_PRIO      20u
-#define RETRIEVE_P_FROM_BUF_TASK_STK_SIZE  1024u
-static CPU_STK retrieve_from_buf_stk[RETRIEVE_P_FROM_BUF_TASK_STK_SIZE];
+#define RETRIEVE_DATA_FROM_BUF_TASK_PRIO      20u
+#define RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE  1024u
+static CPU_STK retrieve_from_buf_stk[RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE];
 static OS_TCB  retrieve_from_buf_tcb;
+
+//For Printing Pressure tasks
+#define RETRIEVE_DATA_FROM_BUF2_TASK_PRIO      25u
+#define RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE  1024u
+static CPU_STK retrieve_from_buf2_stk[RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE];
+static OS_TCB  retrieve_from_buf2_tcb;
+
+static sensor_sample_t sensor_data_buffer2;
+static bool sensor_data_buffer2_ready = false;
 
 #define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 14
-static char sd_batch_write_buf[SD_BUF_WRITE_SIZE];
-static int sd_batch_sample_count = 0;
+static char sd_write_buf[SD_BUF_WRITE_SIZE];
+static int sd_buffer_sample_count = 0;
 static int sd_bytes_merged = 0;
 static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
-#define BUTTON_TASK_PRIO      31u
-#define BUTTON_TASK_STK_SIZE  512u
-static CPU_STK button_stk[BUTTON_TASK_STK_SIZE];
-static OS_TCB  button_tcb;
+#define BUTTON_STOP_ACQU_TASK_PRIO      31u
+#define BUTTON_STOP_ACQU_TASK_STK_SIZE  512u
+static CPU_STK button_stop_acqu_stk[BUTTON_STOP_ACQU_TASK_STK_SIZE];
+static OS_TCB  button_stop_acqu_tcb;
 
-//For Error Message task
-#define ERR_TASK_PRIO      35u
-#define ERR_TASK_STK_SIZE  128u
-static CPU_STK err_stk[ERR_TASK_STK_SIZE];
-static OS_TCB  err_tcb;
-
-//For Keller_get_pressure_task
+//For get_sensor_data_task
 static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
 { // Send a zero-length write to confirm the sensor is on the bus
   I2C_TransferSeq_TypeDef seq;
@@ -146,23 +155,95 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
   return (I2CSPM_Transfer(sl_i2cspm_sensor, &seq) == i2cTransferDone); // compare return value of I2C_TransferReturn_TypeDef to i2cTransferDone, if equal then true (1) gets returned, means successful.
 }
 
-void keller_get_pressure_task(void *p_arg); // forward declaration
-void retrieve_pressure_from_buffer_task(void *p_arg); // forward declaration
-void button_task(void *p_arg); // forward declaration
-void err_msg_task(void *p_arg); // forward declaration
-//-------------------------------------------------------------------------------------------------------------
+void get_sensor_data_task(void *p_arg); // forward declaration
+void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
+void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward declaration
+void button_stop_acqu_task(void *p_arg); // forward declaration
 
-void keller_get_pressure_task_create(void) {
+//----------------------------------Sub Tasks--------------------------------------------------------------
+
+void reset_block_avg_data_accumulators(void){
+  pressure_sum       = 0;
+  temp_sum           = 0;
+  avg_sample_counter = 0;
+  sensor_sample_t discard;
+  while (sensor_data_buffer_retrieve(&discard)) {}
+}
+
+void flush_sd_before_close(void){
+  if (sd_buffer_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
+      mod_sd_write_AW(sd_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
+      sd_buffer_sample_count=0;
+      sd_bytes_merged = 0;
+  }
+  else{
+      printf("No flush of data to sd card needed\r\n");
+  }
+}
+
+unsigned int get_sample_rate_hz(void){
+  return sample_rate_hz;
+}
+
+void config_sample_rate_task(unsigned int rate_hz) {
+    if (rate_hz < 1 || rate_hz > 100) rate_hz = SAMPLE_RATE_HZ_DEFAULT;
+    sample_rate_hz     = rate_hz;
+    avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
+}
+
+void sensor_data_buffer2_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall) {
+    sensor_data_buffer2.p_mbar  = p_mbar;
+    sensor_data_buffer2.t_centi = t_centi;
+    sensor_data_buffer2.t_ticks = t_ticks;
+    sensor_data_buffer2.hall    = hall;
+    sensor_data_buffer2_ready   = true; // marks that sensor has stored a real reading
+}
+
+bool sensor_data_buffer2_retrieve(sensor_sample_t *sample) {
+    if (!sensor_data_buffer2_ready) return false; // wait until sensor has stored a real reading
+    *sample = sensor_data_buffer2;
+    sensor_data_buffer2_ready = false; // consumed — next retrieve will wait for the next store
+    return true;
+    // single_read_sensor_flag is cleared separately by the task after printing
+}
+
+void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
+void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
+void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf2_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
+void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_acqu_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
+
+static bool sensor_state_reset_on_resume = false;
+void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
+
+bool keller_sensor_check(void) { return keller_p_sensor_init(); }
+
+static keller_state_t sensor_task_state = STATE_WRITE; // start on this state
+
+void get_sensor_data_task_suspend(void) {
+    RTOS_ERR err;
+    while (sensor_task_state != STATE_DELAY) {
+        OSTimeDly(1, OS_OPT_TIME_DLY, &err);
+    }
+    OSTaskSuspend(&sensor_tcb, &err);
+}
+
+//-----------------------------Acquisition Tasks-----------------------------------------------------
+
+void get_sensor_data_task_create(void) {
   RTOS_ERR err;
 
-  OSTaskCreate(&keller_tcb,
-               "Keller ACQ",
-               keller_get_pressure_task,
+  OSTaskCreate(&sensor_tcb,
+               "Sensor ACQ",
+               get_sensor_data_task,
                NULL,
-               KELLER_GET_PRESSURE_TASK_PRIO,
-               &keller_stk[0],
-               (KELLER_GET_PRESSURE_TASK_STK_SIZE / 10u),
-               KELLER_GET_PRESSURE_TASK_STK_SIZE,
+               GET_SENSOR_DATA_TASK_PRIO,
+               &sensor_stk[0],
+               (GET_SENSOR_DATA_TASK_STK_SIZE / 10u),
+               GET_SENSOR_DATA_TASK_STK_SIZE,
                0u,
                0u,
                DEF_NULL,
@@ -170,7 +251,7 @@ void keller_get_pressure_task_create(void) {
                &err);
 }
 
-void keller_get_pressure_task(void *p_arg)
+void get_sensor_data_task(void *p_arg)
 {
   (void)p_arg;
 
@@ -190,9 +271,6 @@ void keller_get_pressure_task(void *p_arg)
 
   bool first_loop = true;
   bool data_processed = false;
-  int32_t pressure_sum = 0;
-  int32_t temp_sum = 0;
-  int avg_sample_counter = 0;
   uint8_t raw[5];
   uint64_t t_ticks = 0;
   uint64_t t_ticks_mid = 0;
@@ -216,26 +294,31 @@ void keller_get_pressure_task(void *p_arg)
   int hall_midway = 0; // TODO: well 0 is an answer so figure out what happens if its the zero from init vs 0 from sensor reading
   int hall_raw = 0;
 
-  keller_buffer_init();
+  sensor_data_buffer_init();
 
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(HALL_EFFECT_PORT, HALL_EFFECT_PIN, gpioModeInputPull, HALL_EFFECT_IDLE_STATE); // high at first, when pulled low will detect 0
 
-  keller_state_t state = STATE_WRITE; // start on this state
-
   while (1){
-      switch (state) {
+
+      if (sensor_state_reset_on_resume){
+          sensor_task_state = STATE_WRITE;
+          first_loop = true;
+          sensor_state_reset_on_resume = false;
+      }
+
+      switch (sensor_task_state) {
 
           case STATE_WRITE: {
               cycle_start = sl_sleeptimer_get_tick_count();
               bool trigger_ok = keller_p_sensor_trigger();
               if (trigger_ok) {
                   time_after_trigger = sl_sleeptimer_get_tick_count();
-                  state = STATE_WAIT;
+                  sensor_task_state = STATE_WAIT;
               }
               else if (!trigger_ok) {
                   printf("ERROR: trigger write failed\r\n");
-                  state = STATE_WRITE;
+                  sensor_task_state = STATE_DELAY;
               }
               else {
                   printf("ERROR: unexpected write state condition\r\n");
@@ -246,10 +329,11 @@ void keller_get_pressure_task(void *p_arg)
           case STATE_WAIT: {
               uint32_t now = sl_sleeptimer_get_tick_count();
               if ((uint32_t)(now - time_after_trigger) >= sample_interval_ticks) {
-                  state = STATE_READ;
+                  sensor_task_state = STATE_READ;
               }
               else if ((uint32_t)(now - time_after_trigger) < sample_interval_ticks) {
                   if (!first_loop && !data_processed) {
+                      data_processed = true;
                       status = raw[0];
                       if (!(status & STATUS_FIXED_BIT)) {
                           printf("ERROR: Bad status byte 0x%02X\r\n", status);
@@ -268,16 +352,15 @@ void keller_get_pressure_task(void *p_arg)
                           pressure_sum += p_mbar;
                           temp_sum += t_centi;
                           avg_sample_counter++;
-                          if (avg_sample_counter == (AVG_SAMPLE_COUNT+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
+                          if (avg_sample_counter == (avg_sample_count+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
                                t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
                                hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
                           }
-                          if (avg_sample_counter == AVG_SAMPLE_COUNT) {
-                              if (keller_buffer_store(pressure_sum/AVG_SAMPLE_COUNT,
-                                                  temp_sum/AVG_SAMPLE_COUNT,
+                          if (avg_sample_counter == avg_sample_count) {
+                              if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
+                                                  temp_sum/(int32_t)avg_sample_count,
                                                   t_ticks_mid,
-                                                  hall_midway)){
-                              }
+                                                  hall_midway)){ }
                               else {
                                   freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
                                   t_sec_whole = t_ticks / freq;
@@ -285,9 +368,15 @@ void keller_get_pressure_task(void *p_arg)
                                   printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
                                          (uint32_t)(t_sec_whole / 1000000),
                                          (uint32_t)(t_sec_whole % 1000000),
-                                         (uint32_t)t_sec_frac),
-                                         (int)hall_midway;
+                                         (uint32_t)t_sec_frac);
                                        }
+                              if (system_get_single_read_flag()){
+                                  (sensor_data_buffer2_store(pressure_sum/(int32_t)avg_sample_count,
+                                                             temp_sum/(int32_t)avg_sample_count,
+                                                             t_ticks_mid,
+                                                             hall_midway));
+                              }
+
                               pressure_sum = 0;
                               temp_sum = 0;
                               avg_sample_counter = 0;
@@ -301,7 +390,7 @@ void keller_get_pressure_task(void *p_arg)
                   uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
                   if (remaining_ms < 1) remaining_ms = 1;
                   OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
-                  state = STATE_WAIT;
+                  sensor_task_state = STATE_WAIT;
               }
               else {
                   printf("ERROR: unexpected wait state condition\r\n");
@@ -310,17 +399,17 @@ void keller_get_pressure_task(void *p_arg)
           }
 
           case STATE_READ: {
-              hall_raw = GPIO_PinInGet(HALL_EFFECT_PORT, HALL_EFFECT_PIN); // Read Value of hall effect sensor
               bool read_ok = keller_p_sensor_read(raw, sizeof(raw));
               t_ticks = sl_sleeptimer_get_tick_count64();
+              hall_raw = GPIO_PinInGet(HALL_EFFECT_PORT, HALL_EFFECT_PIN); // Read Value of hall effect sensor
               if (read_ok) {
                   first_loop = false;
                   data_processed = false;
-                  state = STATE_DELAY;
+                  sensor_task_state = STATE_DELAY;
               }
               else if (!read_ok) {
                   printf("ERROR: I2C read failed\r\n");
-                  state = STATE_READ;
+                  sensor_task_state = STATE_DELAY;
               }
               else {
                   printf("ERROR: unexpected read state condition\r\n");
@@ -331,7 +420,7 @@ void keller_get_pressure_task(void *p_arg)
           case STATE_DELAY: {
               uint32_t now = sl_sleeptimer_get_tick_count();
               if ((uint32_t)(now - cycle_start) >= total_interval_ticks) {
-                  state = STATE_WRITE;
+                  sensor_task_state = STATE_WRITE;
               }
               else if ((uint32_t)(now - cycle_start) < total_interval_ticks) {
                   RTOS_ERR yield_err;
@@ -339,7 +428,7 @@ void keller_get_pressure_task(void *p_arg)
                   uint32_t remaining_ms = sl_sleeptimer_tick_to_ms(remaining);
                   if (remaining_ms < 1) remaining_ms = 1;
                   OSTimeDly(remaining_ms, OS_OPT_TIME_DLY, &yield_err);
-                  state = STATE_DELAY;
+                  sensor_task_state = STATE_DELAY;
               }
               else {
                   printf("ERROR: unexpected delay state condition\r\n");
@@ -350,102 +439,149 @@ void keller_get_pressure_task(void *p_arg)
   }
 }
 
-void retrieve_pressure_from_buffer_task_create(void) {
+void retrieve_data_from_buffer_and_sd_store_task_create(void) {
   RTOS_ERR err;
 
   OSTaskCreate(&retrieve_from_buf_tcb,
                "RetrieveFromBuf",
-               retrieve_pressure_from_buffer_task,
+               retrieve_data_from_buffer_and_sd_store_task,
                NULL,
-               RETRIEVE_P_FROM_BUF_TASK_PRIO,
+               RETRIEVE_DATA_FROM_BUF_TASK_PRIO,
                &retrieve_from_buf_stk[0],
-               (RETRIEVE_P_FROM_BUF_TASK_STK_SIZE / 10u),
-               RETRIEVE_P_FROM_BUF_TASK_STK_SIZE,
+               (RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE / 10u),
+               RETRIEVE_DATA_FROM_BUF_TASK_STK_SIZE,
                0u,
 
                0u,
                DEF_NULL,
                OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
                &err);
+
 }
 
 
-void retrieve_pressure_from_buffer_task(void *p_arg) {
+void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
 
   while (1) {
 
       // drain circular buffer and printf
-      keller_sample_t sample;
+      sensor_sample_t sample; // keller_buffer_Store holds the block averaged samples
 
-      while (keller_buffer_retrieve(&sample)) {
-
-          if (!mod_sd_is_open_AW()){
-             break; // if SD card not open, exit loop
-          }
+      while (sensor_data_buffer_retrieve(&sample)) {
 
           uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
           uint64_t t_sec_whole = sample.t_ticks / freq;
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
-          int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
-                             "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
-                             (sample.p_mbar<0 ? '-':' '),
-                             (int)(abs(sample.p_mbar) / 1000),
-                             (int)(abs(sample.p_mbar) % 1000),
-                             (int)((sample.t_centi * 9 / 5 + 3200) / 100),
-                             (int)((sample.t_centi * 9 / 5 + 3200) % 100),
-                             (uint32_t)(t_sec_whole / 1000000),
-                             (uint32_t)(t_sec_whole % 1000000),
-                             (uint32_t)t_sec_frac,
-                             sample.hall);
-
-          memcpy(sd_batch_write_buf+(sd_batch_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
-                                                                                              // ^ the addition moves destination pointer forward by bytes already accumulated
-          sd_batch_sample_count++;
-          sd_bytes_merged += len; // bytes written to data_array_for_sd_card
-
-          if (sd_batch_sample_count >= SD_SAMPLES_PER_WRITE){
-              uint32_t write_start = sl_sleeptimer_get_tick_count();
-              bool write_ok = mod_sd_write_AW(sd_batch_write_buf,sd_batch_sample_count*len);
-              uint32_t write_end = sl_sleeptimer_get_tick_count();
-              uint32_t write_ms = sl_sleeptimer_tick_to_ms(write_end - write_start);
-//              printf("SD W: %lu ms\r\n", write_ms);
-              if (!write_ok){
-                  printf("Write failed for buffer \r\n");
+          if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){
+              if (!mod_sd_is_open_AW()){
+                  break; // if SD card not open, exit loop
               }
-              sd_batch_sample_count=0;
-              sd_bytes_merged = 0;
+
+              int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
+                                           "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+                                           (sample.p_mbar<0 ? '-':' '),
+                                           (int)(abs(sample.p_mbar) / 1000),
+                                           (int)(abs(sample.p_mbar) % 1000),
+                                           (int)((sample.t_centi * 9 / 5 + 3200) / 100),
+                                           (int)((sample.t_centi * 9 / 5 + 3200) % 100),
+                                           (uint32_t)(t_sec_whole / 1000000),
+                                           (uint32_t)(t_sec_whole % 1000000),
+                                           (uint32_t)t_sec_frac,
+                                           sample.hall);
+
+              memcpy(sd_write_buf+(sd_buffer_sample_count*len), data_array_for_sd_card,len); // copy "len" from "data_array_for_sd_card" into "sd_batch_write_buf+(sd_batch_sample_count*len)"
+                                                                                                  // ^ the addition moves destination pointer forward by bytes already accumulated
+              sd_buffer_sample_count++;
+              sd_bytes_merged += len; // bytes written to data_array_for_sd_card
+
+              if (sd_buffer_sample_count >= SD_SAMPLES_PER_WRITE){
+                  bool write_ok = mod_sd_write_AW(sd_write_buf,sd_buffer_sample_count*len);
+                  if (!write_ok){
+                      printf("Write failed for buffer \r\n");
+                  }
+                  sd_buffer_sample_count=0;
+                  sd_bytes_merged = 0;
+              }
           }
+
       }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
 }
 
-static void flush_sd_before_close(void){
-  if (sd_batch_sample_count>0 && mod_sd_is_open_AW()) {       // sample count should be reset to zero if fully written to sd card, mod_sd_is_open_AW should return 1 if open
-      mod_sd_write_AW(sd_batch_write_buf,sd_bytes_merged);    // write to sd card what didn't get written as a full batch write
-      sd_batch_sample_count=0;
-      sd_bytes_merged = 0;
-  }
-  else{
-      printf("No flush of data to sd card needed\r\n");
+void retrieve_data_from_buffer2_and_single_read_task_create(void) {
+  RTOS_ERR err;
+
+  OSTaskCreate(&retrieve_from_buf2_tcb,
+               "RetrieveFromBuf2",
+               retrieve_data_from_buffer2_and_single_read_task,
+               NULL,
+               RETRIEVE_DATA_FROM_BUF2_TASK_PRIO,
+               &retrieve_from_buf2_stk[0],
+               (RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE / 10u),
+               RETRIEVE_DATA_FROM_BUF2_TASK_STK_SIZE,
+               0u,
+               0u,
+               DEF_NULL,
+               OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
+               &err);
+
+}
+
+
+void retrieve_data_from_buffer2_and_single_read_task(void *p_arg) {
+  (void)p_arg;
+  RTOS_ERR err;
+
+  while (1) {
+
+      // drain circular buffer and printf
+      sensor_sample_t sample2; // keller_buffer_Store holds the block averaged samples
+
+      while (sensor_data_buffer2_retrieve(&sample2)) {
+
+          uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
+          uint64_t t_sec_whole = sample2.t_ticks / freq;
+          uint64_t t_sec_frac  = ((sample2.t_ticks % freq) * 1000000) / freq;
+
+          if (system_get_single_read_flag()){
+
+              printf("%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d\r\n",
+                             (sample2.p_mbar<0 ? '-':' '),
+                             (int)(abs(sample2.p_mbar) / 1000),
+                             (int)(abs(sample2.p_mbar) % 1000),
+                             (int)((sample2.t_centi * 9 / 5 + 3200) / 100),
+                             (int)((sample2.t_centi * 9 / 5 + 3200) % 100),
+                             (uint32_t)(t_sec_whole / 1000000),
+                             (uint32_t)(t_sec_whole % 1000000),
+                             (uint32_t)t_sec_frac,
+                             sample2.hall);
+
+              system_clear_single_read_flag(); //clear flag
+          }
+
+
+      }
+
+      OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
   }
 }
 
-void button_task_create(void) {
+void button_stop_acqu_task_create(void) {
   RTOS_ERR err;
 
-  OSTaskCreate(&button_tcb,
-               "Button",
-               button_task,
+  OSTaskCreate(&button_stop_acqu_tcb,
+               "Button stop acqu",
+               button_stop_acqu_task,
                NULL,
-               BUTTON_TASK_PRIO,
-               &button_stk[0],
-               (BUTTON_TASK_STK_SIZE / 10u),
-               BUTTON_TASK_STK_SIZE,
+               BUTTON_STOP_ACQU_TASK_PRIO,
+               &button_stop_acqu_stk[0],
+               (BUTTON_STOP_ACQU_TASK_STK_SIZE / 10u),
+               BUTTON_STOP_ACQU_TASK_STK_SIZE,
                0u,
                0u,
                DEF_NULL,
@@ -453,42 +589,24 @@ void button_task_create(void) {
                &err);
 }
 
-void button_task(void *p_arg) {
+void button_stop_acqu_task(void *p_arg) {
+
   (void)p_arg;
+
   RTOS_ERR err;
+  uint8_t button_press_count = 0;
   while (1) {
       if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
-          flush_sd_before_close();
-          mod_sd_close_and_unmount_AW();
+          if (++button_press_count >=5){ // 5 increments of the button poll check
+              button_press_count =0;
+              system_request_stop_acquisition();
+          }
+      }
+      else {
+              button_press_count = 0;
       }
       OSTimeDly(50, OS_OPT_TIME_DLY, &err); // poll every 50ms
 
       // OSTaskDelete put here
-  }
-}
-
-void err_msg_task_create(void) {
-  RTOS_ERR err;
-
-  OSTaskCreate(&err_tcb,
-               "Error",
-               err_msg_task,
-               NULL,
-               ERR_TASK_PRIO,
-               &err_stk[0],
-               (ERR_TASK_STK_SIZE / 10u),
-               ERR_TASK_STK_SIZE,
-               0u,
-               0u,
-               DEF_NULL,
-               OS_OPT_TASK_STK_CHK | OS_OPT_TASK_STK_CLR,
-               &err);
-}
-
-void err_msg_task(void *p_arg){
-  (void)p_arg;
-  RTOS_ERR err;
-  while (1) {
-      OSTimeDly(500, OS_OPT_TIME_DLY, &err); // poll every 500ms
   }
 }

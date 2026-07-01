@@ -84,18 +84,18 @@
 // <<< sl:start pin_tool >>>
 // <usart signal=TX,RX,(CTS),(RTS)> SL_IOSTREAM_USART_VCOM
 // $[USART_SL_IOSTREAM_USART_VCOM]
-#define SL_IOSTREAM_USART_VCOM_PERIPHERAL        USART4
-#define SL_IOSTREAM_USART_VCOM_PERIPHERAL_NO     4
+#define SL_IOSTREAM_USART_VCOM_PERIPHERAL        USART5
+#define SL_IOSTREAM_USART_VCOM_PERIPHERAL_NO     5
 
 // USART4 TX on PH4
-#define SL_IOSTREAM_USART_VCOM_TX_PORT           gpioPortH
-#define SL_IOSTREAM_USART_VCOM_TX_PIN            4
-#define SL_IOSTREAM_USART_VCOM_TX_LOC            4
+#define SL_IOSTREAM_USART_VCOM_TX_PORT           gpioPortE
+#define SL_IOSTREAM_USART_VCOM_TX_PIN            8
+#define SL_IOSTREAM_USART_VCOM_TX_LOC            0
 
 // USART4 RX on PH5
-#define SL_IOSTREAM_USART_VCOM_RX_PORT           gpioPortH
-#define SL_IOSTREAM_USART_VCOM_RX_PIN            5
-#define SL_IOSTREAM_USART_VCOM_RX_LOC            4
+#define SL_IOSTREAM_USART_VCOM_RX_PORT           gpioPortE
+#define SL_IOSTREAM_USART_VCOM_RX_PIN            9
+#define SL_IOSTREAM_USART_VCOM_RX_LOC            0
 
 // USART4 CTS on PH8
 #define SL_IOSTREAM_USART_VCOM_CTS_PORT          gpioPortH
