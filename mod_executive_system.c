@@ -32,7 +32,9 @@ void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUT
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)          { single_read_sensor_flag = true; }
 void system_clear_single_read_flag(void)       { single_read_sensor_flag = false; }
+
 static bool buf2_task_is_running = false;
+static bool button_task_is_running = false; // keeps track of if button task is running
 
 static void executive_task(void *p_arg) {
   (void)p_arg;
@@ -100,7 +102,7 @@ static void executive_task(void *p_arg) {
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
           // TODO: add control task
-          button_stop_logging_task_create(); button_stop_logging_task_suspend();
+          button_stop_acqu_task_create(); button_stop_acqu_task_suspend();
 
           system_state = SYS_SELF_CHECK;
           break;
@@ -130,8 +132,6 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_ACQU: {
-          // TODO: fix led indicators
-          // TODO: re-mount SD card when we start acquisition the second time around (after already doing acqu and then stopping, restarting again)
 
           if (state_entry) {
               printf("S7: entered SYS_ACQU\r\n");
@@ -140,7 +140,6 @@ static void executive_task(void *p_arg) {
               
               sensor_request_state_reset();
               get_sensor_data_task_resume();        // start reading from sensors and store on circular buffer
-              // TODO: implement button task resume, make sure button functionality now just leaves SYS_ACQU
               
               if (single_read_sensor_flag_copy){
                   retrieve_buf2_task_resume();
@@ -156,6 +155,8 @@ static void executive_task(void *p_arg) {
                   if (run_time_vars.controller_on_flg){
                       // TODO: resume controller task
                   }
+                  button_stop_acqu_task_resume(); // resume in full recording path
+                  button_task_is_running=true;
               }
           }
           
@@ -183,7 +184,10 @@ static void executive_task(void *p_arg) {
                   if (run_time_vars.controller_on_flg) {
                       // TODO: put control task suspend here
                   }
-                  // TODO: button_stop_logging_task_suspend() only if button was resumed
+                  if (button_task_is_running){
+                      button_stop_acqu_task_suspend();
+                      button_task_is_running = false;
+                  }
                   flush_sd_before_close();
                   mod_sd_close_and_unmount_AW();
               }

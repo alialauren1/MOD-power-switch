@@ -103,10 +103,10 @@ static int sd_bytes_merged = 0;
 static char data_array_for_sd_card[36]; // define at top of file and make static char array so doesn't use stack memory, possibly taking 80 bytes every run
 
 //For Button task
-#define BUTTON_STOP_LOGGING_TASK_PRIO      31u
-#define BUTTON_STOP_LOGGING_TASK_STK_SIZE  512u
-static CPU_STK button_stop_logging_stk[BUTTON_STOP_LOGGING_TASK_STK_SIZE];
-static OS_TCB  button_stop_logging_tcb;
+#define BUTTON_STOP_ACQU_TASK_PRIO      31u
+#define BUTTON_STOP_ACQU_TASK_STK_SIZE  512u
+static CPU_STK button_stop_acqu_stk[BUTTON_STOP_ACQU_TASK_STK_SIZE];
+static OS_TCB  button_stop_acqu_tcb;
 
 //For get_sensor_data_task
 static bool keller_p_sensor_init(void) // Safety formality: checks if sensor responds to its address being called
@@ -158,7 +158,7 @@ static bool keller_p_sensor_read(uint8_t *data, uint16_t len) // Read conversion
 void get_sensor_data_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer_and_sd_store_task(void *p_arg); // forward declaration
 void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward declaration
-void button_stop_logging_task(void *p_arg); // forward declaration
+void button_stop_acqu_task(void *p_arg); // forward declaration
 
 //----------------------------------Sub Tasks--------------------------------------------------------------
 
@@ -213,8 +213,8 @@ void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_
 void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
 void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf2_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
-void button_stop_logging_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_logging_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
-void button_stop_logging_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_logging_tcb, &err); }
+void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_acqu_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
 
 static bool sensor_state_reset_on_resume = false;
 void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
@@ -571,17 +571,17 @@ void retrieve_data_from_buffer2_and_single_read_task(void *p_arg) {
   }
 }
 
-void button_stop_logging_task_create(void) {
+void button_stop_acqu_task_create(void) {
   RTOS_ERR err;
 
-  OSTaskCreate(&button_stop_logging_tcb,
-               "Button stop logging",
-               button_stop_logging_task,
+  OSTaskCreate(&button_stop_acqu_tcb,
+               "Button stop acqu",
+               button_stop_acqu_task,
                NULL,
-               BUTTON_STOP_LOGGING_TASK_PRIO,
-               &button_stop_logging_stk[0],
-               (BUTTON_STOP_LOGGING_TASK_STK_SIZE / 10u),
-               BUTTON_STOP_LOGGING_TASK_STK_SIZE,
+               BUTTON_STOP_ACQU_TASK_PRIO,
+               &button_stop_acqu_stk[0],
+               (BUTTON_STOP_ACQU_TASK_STK_SIZE / 10u),
+               BUTTON_STOP_ACQU_TASK_STK_SIZE,
                0u,
                0u,
                DEF_NULL,
@@ -589,7 +589,7 @@ void button_stop_logging_task_create(void) {
                &err);
 }
 
-void button_stop_logging_task(void *p_arg) {
+void button_stop_acqu_task(void *p_arg) {
 
   (void)p_arg;
 
