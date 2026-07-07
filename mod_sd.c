@@ -301,6 +301,7 @@ static void mod_sd_open_AW(void){
   }
   else {
       printf("File open has failed: %d\r\n",fres);
+      GPIO_PinOutSet(gpioPortH, 11);  // turn off led to GREEN — no longer accurate to claim "recording"
       GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
 }
