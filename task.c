@@ -76,7 +76,7 @@ typedef enum {
     STATE_WAIT,
     STATE_READ,
     STATE_DELAY
-} keller_state_t;
+} sensor_state_t;
 
 //For Keller_get_pressure_task_create
 #define GET_SENSOR_DATA_TASK_PRIO      11u
@@ -101,6 +101,14 @@ static OS_TCB  retrieve_from_buf2_tcb;
 #define CONTROLLER_TASK_STK_SIZE  1024u
 static CPU_STK controller_stk[CONTROLLER_TASK_STK_SIZE];
 static OS_TCB  controller_tcb;
+
+typedef enum {
+    STATE_PROFILE_EST,
+    STATE_ON_AND_WAIT,
+    STATE_TURN_OFF,
+    STATE_OFF_AND_WAIT,
+    STATE_TURN_ON
+} controller_state_t;
 
 #define SD_BUF_WRITE_SIZE 512
 #define SD_SAMPLES_PER_WRITE 13
@@ -216,7 +224,8 @@ void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
 
 bool keller_sensor_check(void) { return keller_p_sensor_init(); }
 
-static keller_state_t sensor_task_state = STATE_WRITE; // start on this state
+static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
+static controller_state_t controller_task_state = STATE_PROFILE_EST;
 
 void get_sensor_data_task_suspend(void) {
     RTOS_ERR err;
@@ -644,19 +653,47 @@ void controller_task(void *p_arg) {
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 0); // starts LOW = instrument ON (fail-safe default)
 
-  sensor_sample_t sample3;
+//  sensor_sample_t sample3;
 
   while (1) {
 
-      while (sensor_data_buffer3_retrieve(&sample3)) {
+      switch (controller_task_state) {
+        case STATE_PROFILE_EST: {
+          printf("S)\r\n");
+          controller_task_state= STATE_ON_AND_WAIT;
+          break;
+        }
+        case STATE_ON_AND_WAIT: {
+          printf("S1\r\n");
+          controller_task_state = STATE_TURN_OFF;
+          break;
+        }
+        case STATE_TURN_OFF: {
+          printf("S2\r\n");
+          controller_task_state = STATE_OFF_AND_WAIT;
+          break;
+        }
+        case STATE_OFF_AND_WAIT: {
+          printf("S3\r\n");
+          controller_task_state = STATE_TURN_ON;
+          break;
+        }
+        case STATE_TURN_ON: {
+          printf("S4\r\n");
+          controller_task_state = STATE_ON_AND_WAIT;
+          break;
+        }
+      }
+
+//      while (sensor_data_buffer3_retrieve(&sample3)) {
 //          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
 //                 (sample3.p_mbar<0 ? '-':' '),
 //                 (int)(abs(sample3.p_mbar) / 1000),
 //                 (int)(abs(sample3.p_mbar) % 1000),
 //                 sample3.hall);
           // TODO: replace with real CTRL_OFF/CTRL_ON sub-FSM once switch_* config params exist
-      }
+//      }
 
-      OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(100, OS_OPT_TIME_DLY, &err);
   }
 }
