@@ -659,7 +659,7 @@ void controller_task(void *p_arg) {
 
       switch (controller_task_state) {
         case STATE_PROFILE_EST: {
-          printf("S)\r\n");
+          printf("S0\r\n");
           controller_task_state= STATE_ON_AND_WAIT;
           break;
         }
