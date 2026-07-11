@@ -716,11 +716,19 @@ void controller_task(void *p_arg) {
         }
         case STATE_OFF_AND_WAIT: {
           printf("CTRL S3\r\n");
-//          controller_task_state = STATE_TURN_ON;
+          switch_direction_t on_dir = system_get_switch_on_direction();
+          int32_t on_depth = system_get_switch_on_depth_mbar();
+          if (on_dir == SWITCH_DIRECTION_DOWNCAST && ((latest_hall == HALL_EFFECT_DESCENT_STATE && latest_p_mbar >= on_depth) || latest_hall == HALL_EFFECT_ASCENT_STATE)) {
+              controller_task_state = STATE_TURN_ON;
+          }
+          else if (on_dir == SWITCH_DIRECTION_UPCAST && ((latest_hall == HALL_EFFECT_ASCENT_STATE && latest_p_mbar <= on_depth) || latest_hall == HALL_EFFECT_DESCENT_STATE)) {
+              controller_task_state = STATE_TURN_ON;
+          }
           break;
         }
         case STATE_TURN_ON: {
           printf("CTRL S4\r\n");
+          GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
           controller_task_state = STATE_ON_AND_WAIT;
           break;
         }
