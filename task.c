@@ -653,7 +653,7 @@ void controller_task(void *p_arg) {
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 0); // starts LOW = instrument ON (fail-safe default)
 
-//  sensor_sample_t sample3;
+  sensor_sample_t sample3;
 
   while (1) {
 
@@ -685,15 +685,15 @@ void controller_task(void *p_arg) {
         }
       }
 
-//      while (sensor_data_buffer3_retrieve(&sample3)) {
-//          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
-//                 (sample3.p_mbar<0 ? '-':' '),
-//                 (int)(abs(sample3.p_mbar) / 1000),
-//                 (int)(abs(sample3.p_mbar) % 1000),
-//                 sample3.hall);
+      while (sensor_data_buffer3_retrieve(&sample3)) {
+          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
+                 (sample3.p_mbar<0 ? '-':' '),
+                 (int)(abs(sample3.p_mbar) / 1000),
+                 (int)(abs(sample3.p_mbar) % 1000),
+                 sample3.hall);
           // TODO: replace with real CTRL_OFF/CTRL_ON sub-FSM once switch_* config params exist
-//      }
+      }
 
-      OSTimeDly(100, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(1000, OS_OPT_TIME_DLY, &err);
   }
 }
