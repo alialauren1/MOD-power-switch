@@ -67,8 +67,8 @@ static uint32_t avg_sample_counter = 0;
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
 #define HALL_EFFECT_IDLE_STATE 1 // 1 = naturally HIGH (active-low output), 0 = naturally LOW (active high output)
 
-#define HALL_EFFECT_ALGINED_STATE = 0; // when magnet is aligned, output it low, system on descent
-#define HALL_EFFECT_UNALGIEND_STATE (!HALL_EFFECT_ALGINED_STATE)
+#define HALL_EFFECT_DESCENT_STATE = 0 // when magnet is aligned, output it low, system on descent
+#define HALL_EFFECT_ASCENT_STATE (!HALL_EFFECT_ALGINED_STATE)
 
 #define CONTROLLER_OUTPUT_PORT  gpioPortA
 #define CONTROLLER_OUTPUT_PIN   13
