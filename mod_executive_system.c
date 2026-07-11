@@ -28,6 +28,11 @@ system_state_t system_get_state(void)         { return system_state; }
 running_mode_t system_get_running_mode(void)  {return running_mode;}
 bool system_get_single_read_flag(void)        {return single_read_sensor_flag; }
 
+switch_direction_t system_get_switch_on_direction(void)   { return run_time_vars.switch_on_direction; }
+int32_t             system_get_switch_on_depth_mbar(void)  { return run_time_vars.switch_on_depth_mbar; }
+switch_direction_t system_get_switch_off_direction(void)  { return run_time_vars.switch_off_direction; }
+int32_t             system_get_switch_off_depth_mbar(void) { return run_time_vars.switch_off_depth_mbar; }
+
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)          { single_read_sensor_flag = true; }

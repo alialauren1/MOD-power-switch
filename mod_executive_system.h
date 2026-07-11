@@ -55,4 +55,9 @@ system_state_t system_get_state(void);
 running_mode_t system_get_running_mode(void);
 bool system_get_single_read_flag(void);
 
+switch_direction_t system_get_switch_on_direction(void);
+int32_t             system_get_switch_on_depth_mbar(void);
+switch_direction_t system_get_switch_off_direction(void);
+int32_t             system_get_switch_off_depth_mbar(void);
+
 #endif /* MOD_EXECUTIVE_SYSTEM_H_ */

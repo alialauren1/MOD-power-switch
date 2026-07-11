@@ -631,6 +631,14 @@ void button_stop_acqu_task(void *p_arg) {
   }
 }
 
+static const char* switch_dir_to_str(switch_direction_t d) {
+    switch (d) {
+        case SWITCH_DIRECTION_UPCAST:   return "UPCAST";
+        case SWITCH_DIRECTION_DOWNCAST: return "DOWNCAST";
+        default:                        return "BOTH";
+    }
+}
+
 void controller_task_create(void) {
   RTOS_ERR err;
 
@@ -655,6 +663,12 @@ void controller_task(void *p_arg) {
 
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 0); // starts LOW = instrument ON (fail-safe default)
+
+  printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
+         switch_dir_to_str(system_get_switch_on_direction()),
+         (long)system_get_switch_on_depth_mbar(),
+         switch_dir_to_str(system_get_switch_off_direction()),
+         (long)system_get_switch_off_depth_mbar());
 
   sensor_sample_t sample3;
 
