@@ -68,7 +68,7 @@ static void executive_task(void *p_arg) {
           run_time_vars.switch_on_direction = SWITCH_DIRECTION_DOWNCAST;
           run_time_vars.switch_on_depth_mbar = 45000; // 45 bar, near-bottom pre-trigger
           run_time_vars.switch_off_direction = SWITCH_DIRECTION_DOWNCAST;
-          run_time_vars.switch_off_depth_mbar = 2000; // 2 bar, near-surface reset
+          run_time_vars.switch_off_depth_mbar = 1000; // bar, near-surface reset
           single_read_sensor_flag = false;
 
           system_state = SYS_INIT_INFRA_TASKS;

@@ -67,12 +67,11 @@ static uint32_t avg_sample_counter = 0;
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
 #define HALL_EFFECT_IDLE_STATE 1 // 1 = naturally HIGH (active-low output), 0 = naturally LOW (active high output)
 
-#define HALL_EFFECT_DESCENT_STATE = 0 // when magnet is aligned, output it low, system on descent
-#define HALL_EFFECT_ASCENT_STATE (!HALL_EFFECT_ALGINED_STATE)
+#define HALL_EFFECT_DESCENT_STATE 0 // when magnet is aligned, output it low, system on descent
+#define HALL_EFFECT_ASCENT_STATE (!HALL_EFFECT_DESCENT_STATE)
 
 #define CONTROLLER_OUTPUT_PORT  gpioPortA
-#define CONTROLLER_OUTPUT_PIN   13
-// active-high "cut power" line: LOW (default) = instrument ON (fail-safe), HIGH = instrument OFF
+#define CONTROLLER_OUTPUT_PIN   13 // active-low "cut power" line: HIGH (default) = instrument ON (fail-safe), LOW = instrument OFF
 
 typedef enum {
     STATE_WRITE,
@@ -662,7 +661,7 @@ void controller_task(void *p_arg) {
   RTOS_ERR err;
 
   CMU_ClockEnable(cmuClock_GPIO, true);
-  GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 0); // starts LOW = instrument ON (fail-safe default)
+  GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // starts HIGH = instrument ON (fail-safe default)
 
   printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
          switch_dir_to_str(system_get_switch_on_direction()),
@@ -671,44 +670,60 @@ void controller_task(void *p_arg) {
          (long)system_get_switch_off_depth_mbar());
 
   sensor_sample_t sample3;
+  int32_t latest_p_mbar = 0;
+  int latest_hall = 0;
 
   while (1) {
 
+      if (sensor_data_buffer3_retrieve(&sample3)){
+          latest_p_mbar = sample3.p_mbar ; //update values
+          latest_hall = sample3.hall;
+
+          printf("CTRL: p=%c%03d.%03d bar, hall=%d, ctrl_out=%d\r\n",
+                 (latest_p_mbar<0 ? '-':' '),
+                 (int)(abs(latest_p_mbar) / 1000),
+                 (int)(abs(latest_p_mbar) % 1000),
+                 latest_hall,
+                 GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN));
+      }
+
       switch (controller_task_state) {
         case STATE_PROFILE_EST: {
-          printf("S0\r\n");
+          printf("CTRL S0\r\n");
           controller_task_state= STATE_ON_AND_WAIT;
           break;
         }
         case STATE_ON_AND_WAIT: {
-          printf("S1\r\n");
-          controller_task_state = STATE_TURN_OFF;
+          printf("CTRL S1\r\n");
+
+          if (system_get_switch_on_direction()!=SWITCH_DIRECTION_BOTH){
+              switch_direction_t off_dir = system_get_switch_off_direction();
+              int32_t off_depth = system_get_switch_off_depth_mbar();
+              if (off_dir == SWITCH_DIRECTION_DOWNCAST && latest_hall == HALL_EFFECT_DESCENT_STATE && latest_p_mbar >= off_depth) {
+                  controller_task_state = STATE_TURN_OFF;
+              }
+              else if (off_dir == SWITCH_DIRECTION_UPCAST && latest_hall == HALL_EFFECT_ASCENT_STATE && latest_p_mbar <= off_depth) {
+                  controller_task_state = STATE_TURN_OFF;
+              }
+          }
           break;
         }
         case STATE_TURN_OFF: {
-          printf("S2\r\n");
+          printf("CTRL S2\r\n");
+          GPIO_PinOutClear(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // LOW = instrument OFF
           controller_task_state = STATE_OFF_AND_WAIT;
           break;
         }
         case STATE_OFF_AND_WAIT: {
-          printf("S3\r\n");
-          controller_task_state = STATE_TURN_ON;
+          printf("CTRL S3\r\n");
+//          controller_task_state = STATE_TURN_ON;
           break;
         }
         case STATE_TURN_ON: {
-          printf("S4\r\n");
+          printf("CTRL S4\r\n");
           controller_task_state = STATE_ON_AND_WAIT;
           break;
         }
-      }
-
-      while (sensor_data_buffer3_retrieve(&sample3)) {
-          printf("CTRL: p=%c%03d.%03d bar, hall=%d\r\n",
-                 (sample3.p_mbar<0 ? '-':' '),
-                 (int)(abs(sample3.p_mbar) / 1000),
-                 (int)(abs(sample3.p_mbar) % 1000),
-                 sample3.hall);
-          // TODO: replace with real CTRL_OFF/CTRL_ON sub-FSM once switch_* config params exist
       }
 
       OSTimeDly(1000, OS_OPT_TIME_DLY, &err);
