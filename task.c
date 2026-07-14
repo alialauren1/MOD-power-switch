@@ -672,6 +672,7 @@ void controller_task(void *p_arg) {
   sensor_sample_t sample3;
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
+  bool bottom_turn_around_complete = 0;
 
   while (1) {
 
@@ -699,10 +700,19 @@ void controller_task(void *p_arg) {
           if (system_get_switch_on_direction()!=SWITCH_DIRECTION_BOTH){
               switch_direction_t off_dir = system_get_switch_off_direction();
               int32_t off_depth = system_get_switch_off_depth_mbar();
-              if (off_dir == SWITCH_DIRECTION_DOWNCAST && latest_hall == HALL_EFFECT_DESCENT_STATE && latest_p_mbar >= off_depth) {
+
+              // mark the turn around complete once actually see the direction opposite to off_dir
+              if (off_dir == SWITCH_DIRECTION_DOWNCAST && latest_hall == HALL_EFFECT_ASCENT_STATE) {
+                  bottom_turn_around_complete = true;
+              } else if (off_dir == SWITCH_DIRECTION_UPCAST && latest_hall == HALL_EFFECT_DESCENT_STATE) {
+                  bottom_turn_around_complete = true;
+              }
+
+
+              if (off_dir == SWITCH_DIRECTION_DOWNCAST && latest_hall == HALL_EFFECT_DESCENT_STATE && latest_p_mbar >= off_depth && bottom_turn_around_complete) {
                   controller_task_state = STATE_TURN_OFF;
               }
-              else if (off_dir == SWITCH_DIRECTION_UPCAST && latest_hall == HALL_EFFECT_ASCENT_STATE && latest_p_mbar <= off_depth) {
+              else if (off_dir == SWITCH_DIRECTION_UPCAST && latest_hall == HALL_EFFECT_ASCENT_STATE && latest_p_mbar <= off_depth && bottom_turn_around_complete) {
                   controller_task_state = STATE_TURN_OFF;
               }
           }
@@ -729,6 +739,7 @@ void controller_task(void *p_arg) {
         case STATE_TURN_ON: {
           printf("CTRL S4\r\n");
           GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
+          bottom_turn_around_complete = false; // reset, haven't seen opposite direction since this was ON
           controller_task_state = STATE_ON_AND_WAIT;
           break;
         }
