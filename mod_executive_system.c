@@ -66,7 +66,7 @@ static void executive_task(void *p_arg) {
           run_time_vars.logging_on_flg = true;
           run_time_vars.controller_on_flg = true;
           run_time_vars.switch_off_direction = SWITCH_DIRECTION_DOWNCAST;
-          run_time_vars.switch_off_depth_mbar = 5000; // milli-bar, 5 bar, near-surface reset
+          run_time_vars.switch_off_depth_mbar = 2000; // milli-bar, 5 bar, near-surface reset
           run_time_vars.switch_on_direction = SWITCH_DIRECTION_DOWNCAST;
           run_time_vars.switch_on_depth_mbar = 10000; // milli-bar, near-bottom pre-trigger
           single_read_sensor_flag = false;
