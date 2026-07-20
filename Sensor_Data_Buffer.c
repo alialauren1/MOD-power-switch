@@ -102,7 +102,7 @@ void sensor_data_buffer3_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks
     sensor_data_buffer3.t_centi = t_centi;
     sensor_data_buffer3.t_ticks = t_ticks;
     sensor_data_buffer3.hall    = hall;
-    sensor_data_buffer2.ctrl_out = ctrl_out;
+    sensor_data_buffer3.ctrl_out = ctrl_out;
     sensor_data_buffer3_ready   = true; // marks that sensor has stored a real reading
 }
 
