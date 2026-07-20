@@ -33,6 +33,7 @@ int32_t             system_get_switch_on_depth_mbar(void)  { return run_time_var
 switch_direction_t system_get_switch_off_direction(void)  { return run_time_vars.switch_off_direction; }
 int32_t             system_get_switch_off_depth_mbar(void) { return run_time_vars.switch_off_depth_mbar; }
 
+
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)          { single_read_sensor_flag = true; }
@@ -66,9 +67,9 @@ static void executive_task(void *p_arg) {
           run_time_vars.logging_on_flg = true;
           run_time_vars.controller_on_flg = true;
           run_time_vars.switch_off_direction = SWITCH_DIRECTION_DOWNCAST;
-          run_time_vars.switch_off_depth_mbar = 2000; // milli-bar, 5 bar, near-surface reset
+          run_time_vars.switch_off_depth_mbar = 200; // milli-bar, near-surface reset
           run_time_vars.switch_on_direction = SWITCH_DIRECTION_DOWNCAST;
-          run_time_vars.switch_on_depth_mbar = 10000; // milli-bar, near-bottom pre-trigger
+          run_time_vars.switch_on_depth_mbar = 550; // milli-bar, near-bottom pre-trigger
           single_read_sensor_flag = false;
 
           system_state = SYS_INIT_INFRA_TASKS;
