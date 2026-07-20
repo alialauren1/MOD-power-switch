@@ -44,4 +44,6 @@ void get_sensor_data_task_suspend(void);
 
 bool keller_sensor_check(void);
 
+void sensor_request_print_config(void);
+
 #endif /* TASK_H_ */

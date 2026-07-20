@@ -226,6 +226,9 @@ void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
 
 bool keller_sensor_check(void) { return keller_p_sensor_init(); }
 
+static bool controller_print_config_on_resume = false; // flag for telling when we reenter controller task so we can print config
+void controller_request_print_config(void) { controller_print_config_on_resume = true; }
+
 static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
 static controller_state_t controller_task_state = STATE_PROFILE_EST;
 
@@ -663,18 +666,21 @@ void controller_task(void *p_arg) {
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // starts HIGH = instrument ON (fail-safe default)
 
-  printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
-         switch_dir_to_str(system_get_switch_on_direction()),
-         (long)system_get_switch_on_depth_mbar(),
-         switch_dir_to_str(system_get_switch_off_direction()),
-         (long)system_get_switch_off_depth_mbar());
-
   sensor_sample_t sample3;
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
   bool bottom_turn_around_complete = 0;
 
   while (1) {
+
+      if (controller_print_config_on_resume) {
+          printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
+                 switch_dir_to_str(system_get_switch_on_direction()),
+                 (long)system_get_switch_on_depth_mbar(),
+                 switch_dir_to_str(system_get_switch_off_direction()),
+                 (long)system_get_switch_off_depth_mbar());
+          controller_print_config_on_resume = false;
+      }
 
       if (sensor_data_buffer3_retrieve(&sample3)){
           latest_p_mbar = sample3.p_mbar ; //update values

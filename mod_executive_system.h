@@ -60,4 +60,6 @@ int32_t             system_get_switch_on_depth_mbar(void);
 switch_direction_t system_get_switch_off_direction(void);
 int32_t             system_get_switch_off_depth_mbar(void);
 
+void system_set_switch_on_depth_mbar(int32_t depth_mbar);
+
 #endif /* MOD_EXECUTIVE_SYSTEM_H_ */

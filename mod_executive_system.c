@@ -33,6 +33,7 @@ int32_t             system_get_switch_on_depth_mbar(void)  { return run_time_var
 switch_direction_t system_get_switch_off_direction(void)  { return run_time_vars.switch_off_direction; }
 int32_t             system_get_switch_off_depth_mbar(void) { return run_time_vars.switch_off_depth_mbar; }
 
+void system_set_switch_on_depth_mbar(int32_t depth_mbar) { run_time_vars.switch_on_depth_mbar = depth_mbar; }
 
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
@@ -166,6 +167,7 @@ static void executive_task(void *p_arg) {
                   if (run_time_vars.controller_on_flg){
                       controller_task_resume();
                       controller_task_is_running=true;
+                      controller_request_print_config();
                   }
                   button_stop_acqu_task_resume(); // resume in full recording path
                   button_task_is_running=true;
