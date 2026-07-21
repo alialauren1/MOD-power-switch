@@ -407,24 +407,24 @@ void mod_sd_seed_rtc_AW(void){
 const char* mod_sd_get_filename_AW(void) {return name_buf;} // returns name of file open on sd card
 
 void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t min, uint8_t sec){
-  FIL log_fp;
+  FIL log_time_fp;
   UINT bw;
-  char log_buf[64];
+  char log_time_buf[64];
   uint32_t ticks = sl_sleeptimer_get_tick_count(); // tick count at moment set_time was installed
 
-  TCHAR log_file_name[16];
-  mod_sd_ff_encode("time_log.csv",log_file_name, strlen("time_log.csv"));
-  FRESULT fres = f_open(&log_fp,log_file_name, FA_OPEN_ALWAYS | FA_WRITE); // create time log file if doesnt already exist
+  TCHAR log_time_file_name[16];
+  mod_sd_ff_encode("time_log.csv",log_time_file_name, strlen("time_log.csv"));
+  FRESULT fres = f_open(&log_time_fp,log_time_file_name, FA_OPEN_ALWAYS | FA_WRITE); // create time log file if doesn't already exist
   if (fres==FR_OK){
-      if (f_size(&log_fp)==0){ // if file header doesnt already exist, make it
-          f_write(&log_fp, "data_file,real_world_time,ticks_at_set_time\r\n",strlen("data_file,real_world_time,ticks_at_set_time\r\n"), &bw);
+      if (f_size(&log_time_fp)==0){ // if file header doesn't already exist, make it
+          f_write(&log_time_fp, "data_file,real_world_time,ticks_at_set_time\r\n",strlen("data_file,real_world_time,ticks_at_set_time\r\n"), &bw);
       }
 
-      f_lseek(&log_fp,f_size(&log_fp)); // seek to end so new entries are appended and not verwitten
+      f_lseek(&log_time_fp,f_size(&log_time_fp)); // seek to end so new entries are appended and not re-written
 
-      snprintf(log_buf,sizeof(log_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%lu\r\n",mod_sd_get_filename_AW(), year, month, day, hour, min, sec, ticks);
-      f_write(&log_fp,log_buf,strlen(log_buf),&bw);
-      f_close(&log_fp);
+      snprintf(log_time_buf,sizeof(log_time_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%lu\r\n",mod_sd_get_filename_AW(), year, month, day, hour, min, sec, ticks);
+      f_write(&log_time_fp,log_time_buf,strlen(log_time_buf),&bw);
+      f_close(&log_time_fp);
   }
 }
 
@@ -546,7 +546,6 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
   else {
       printf("config.cfg open error: %d, using defaults\r\n", res);
   }
-
 
 }
 
