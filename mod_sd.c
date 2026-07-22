@@ -60,7 +60,7 @@ static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant o
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
 static volatile bool sd_init_done = false;
 static volatile uint8_t sd_write_prev = 0;
-static void mod_sd_open_AW(void); // AW added, is a forward declaration
+static void mod_sd_open_sensor_log_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
 static char name_buf[16];                  // char array for building filename string "data_xxxx.csv"
 
@@ -201,7 +201,7 @@ void mod_sd_init_task()
   if(res == (FRESULT)RES_OK)
   {
       printf("FATfs mount success\r\n");
-      mod_sd_open_AW();
+      mod_sd_open_sensor_log_AW();
   }
   else
   {
@@ -262,7 +262,7 @@ void mod_sd_create_init_task()
 }
 
 // AW added the following task:
-static void mod_sd_open_AW(void){
+static void mod_sd_open_sensor_log_AW(void){
   UINT bw;                                   // bw (bytes written) so f_write fills this in after the write
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
   FILINFO fno;                                // FatFS file info struct
@@ -295,12 +295,13 @@ static void mod_sd_open_AW(void){
       GPIO_PinOutSet(gpioPortH, 10);    // clear red error LED on successful open
       GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
       sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-      f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
-      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall\r\n") - 1, &bw);
+      f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data, Controller Output\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data, Controller Output\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
+      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall, controller output\r\n") - 1, &bw);
       printf("File created: %s \r\n", name_buf);
   }
   else {
       printf("File open has failed: %d\r\n",fres);
+      GPIO_PinOutSet(gpioPortH, 11);  // turn off led to GREEN — no longer accurate to claim "recording"
       GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
 }
@@ -311,7 +312,8 @@ bool mod_sd_remount_and_open_AW(void){
       printf("Remount failed: %d\r\n", res);
       return false;
   }
-  mod_sd_open_AW();
+  printf("Remount success\r\n");
+  mod_sd_open_sensor_log_AW();
   if (!mod_sd_is_open_AW()) {
       printf("File open failed after remount.\r\n");
       return false;
@@ -353,7 +355,7 @@ bool mod_sd_write_AW(char *buf, int len){
       if ((int)f_size(&fp) + len >= SD_FILE_MAX_SIZE) {
           f_close(&fp);
           sd_file_open = 0;
-          mod_sd_open_AW(); // find next file name and open it
+          mod_sd_open_sensor_log_AW(); // find next file name and open it
           printf("File size limit reached, opened: %s\r\n", name_buf);
       }
 
@@ -364,7 +366,7 @@ bool mod_sd_write_AW(char *buf, int len){
           printf("SD write error: %d\r\n", fres);
           f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
           sd_file_open = 0;    // clear flag to match closed state
-          mod_sd_open_AW();    // open a fresh file so recovery is automatic
+          mod_sd_open_sensor_log_AW();    // open a fresh file so recovery is automatic
       }
       else {
           FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
@@ -374,7 +376,7 @@ bool mod_sd_write_AW(char *buf, int len){
               printf("SD sync error: %d\r\n", fsync_res);
               f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
               sd_file_open = 0;    // clear flag to match closed state
-              mod_sd_open_AW();    // open a fresh file so recovery is automatic
+              mod_sd_open_sensor_log_AW();    // open a fresh file so recovery is automatic
           }
           else { // LED handling
               if(!sd_write_prev){
@@ -405,29 +407,37 @@ void mod_sd_seed_rtc_AW(void){
 const char* mod_sd_get_filename_AW(void) {return name_buf;} // returns name of file open on sd card
 
 void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t min, uint8_t sec){
-  FIL log_fp;
+  FIL log_time_fp;
   UINT bw;
-  char log_buf[64];
+  char log_time_buf[64];
   uint32_t ticks = sl_sleeptimer_get_tick_count(); // tick count at moment set_time was installed
 
-  TCHAR log_file_name[16];
-  mod_sd_ff_encode("time_log.csv",log_file_name, strlen("time_log.csv"));
-  FRESULT fres = f_open(&log_fp,log_file_name, FA_OPEN_ALWAYS | FA_WRITE); // create time log file if doesnt already exist
+  TCHAR log_time_file_name[16];
+  mod_sd_ff_encode("time_log.csv",log_time_file_name, strlen("time_log.csv"));
+  FRESULT fres = f_open(&log_time_fp,log_time_file_name, FA_OPEN_ALWAYS | FA_WRITE); // create time log file if doesn't already exist
   if (fres==FR_OK){
-      if (f_size(&log_fp)==0){ // if file header doesnt already exist, make it
-          f_write(&log_fp, "data_file,real_world_time,ticks_at_set_time\r\n",strlen("data_file,real_world_time,ticks_at_set_time\r\n"), &bw);
+      if (f_size(&log_time_fp)==0){ // if file header doesn't already exist, make it
+          f_write(&log_time_fp, "data_file,real_world_time,ticks_at_set_time\r\n",strlen("data_file,real_world_time,ticks_at_set_time\r\n"), &bw);
       }
 
-      f_lseek(&log_fp,f_size(&log_fp)); // seek to end so new entries are appended and not verwitten
+      f_lseek(&log_time_fp,f_size(&log_time_fp)); // seek to end so new entries are appended and not re-written
 
-      snprintf(log_buf,sizeof(log_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%lu\r\n",mod_sd_get_filename_AW(), year, month, day, hour, min, sec, ticks);
-      f_write(&log_fp,log_buf,strlen(log_buf),&bw);
-      f_close(&log_fp);
+      snprintf(log_time_buf,sizeof(log_time_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%lu\r\n",mod_sd_get_filename_AW(), year, month, day, hour, min, sec, ticks);
+      f_write(&log_time_fp,log_time_buf,strlen(log_time_buf),&bw);
+      f_close(&log_time_fp);
   }
 }
 
+static const char* switch_direction_to_str(switch_direction_t d) {
+    switch (d) {
+        case SWITCH_DIRECTION_UPCAST:   return "UPCAST";
+        case SWITCH_DIRECTION_DOWNCAST: return "DOWNCAST";
+        default:                        return "BOTH";
+    }
+}
+
 void mod_sd_load_config_AW(run_time_variables_t *cfg){
-  char   cfg_buf[64];
+  char   cfg_buf[200];
   UINT   br;
   TCHAR  cfg_name[16];
 
@@ -440,12 +450,17 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
       res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_NEW);
        if (res == FR_OK) {
            UINT bw;
-           char line[64];
+           char line[200];
            int len = snprintf(line, sizeof(line),
-               "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
-               cfg->sample_rate_hz,
-               (int)cfg->logging_on_flg,
-               (int)cfg->controller_on_flg);
+                    "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n"
+                    "switch_on_direction=%s\r\nswitch_on_depth_mbar=%ld\r\nswitch_off_direction=%s\r\nswitch_off_depth_mbar=%ld\r\n",
+                    cfg->sample_rate_hz,
+                    (int)cfg->logging_on_flg,
+                    (int)cfg->controller_on_flg,
+                    switch_direction_to_str(cfg->switch_on_direction),
+                    (long)cfg->switch_on_depth_mbar,
+                    switch_direction_to_str(cfg->switch_off_direction),
+                    (long)cfg->switch_off_depth_mbar);
            f_write(&cfg_fp, line, len, &bw);
            f_close(&cfg_fp);
            printf("config.cfg created with defaults\r\n");
@@ -461,6 +476,10 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
       unsigned int parsed_hz = -1;
       int parsed_logging = -1;
       int parsed_controller = -1;
+      long parsed_on_depth_mbar = -1;
+      long parsed_off_depth_mbar = -1;
+      char switch_on_direction_str[16] = "";
+      char switch_off_direction_str[16] = "";
 
       // parse line by line — overwrites in memory the fields that exist in the file,
       // leaving the rest at the defaults set in SYS_STARTUP
@@ -479,19 +498,42 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
           if (sscanf(line, "controller_on_flg=%d", &parsed_controller) == 1) {
               if (parsed_controller == 0 || parsed_controller == 1) cfg->controller_on_flg = (bool)parsed_controller;
           }
+          if (sscanf(line, "switch_on_direction=%15s", switch_on_direction_str) == 1) {
+              if (strcmp(switch_on_direction_str, "UPCAST") == 0) cfg->switch_on_direction = SWITCH_DIRECTION_UPCAST;
+              else if (strcmp(switch_on_direction_str, "DOWNCAST") == 0) cfg->switch_on_direction = SWITCH_DIRECTION_DOWNCAST;
+              else cfg->switch_on_direction = SWITCH_DIRECTION_BOTH;
+          }
+          if (sscanf(line, "switch_on_depth_mbar=%ld", &parsed_on_depth_mbar) == 1) {
+              cfg->switch_on_depth_mbar = (int32_t)parsed_on_depth_mbar;
+          }
+          if (sscanf(line, "switch_off_direction=%15s", switch_off_direction_str) == 1) {
+              if (strcmp(switch_off_direction_str, "UPCAST") == 0) cfg->switch_off_direction = SWITCH_DIRECTION_UPCAST;
+              else if (strcmp(switch_off_direction_str, "DOWNCAST") == 0) cfg->switch_off_direction = SWITCH_DIRECTION_DOWNCAST;
+              else cfg->switch_off_direction = SWITCH_DIRECTION_BOTH;
+          }
+          if (sscanf(line, "switch_off_depth_mbar=%ld", &parsed_off_depth_mbar) == 1) {
+              cfg->switch_off_depth_mbar = (int32_t)parsed_off_depth_mbar;
+          }
           line = strtok(NULL, "\r\n");  // advance to next line; NULL continues from last strtok position
       }
 
-      if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1) {
+      if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1
+          || switch_on_direction_str[0] == '\0' || parsed_on_depth_mbar == -1
+          || switch_off_direction_str[0] == '\0' || parsed_off_depth_mbar == -1) {
           FRESULT rewrite_res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_ALWAYS);
           if (rewrite_res == FR_OK) {
               UINT bw;
-              char out_line[64];
+              char out_line[200];
               int len = snprintf(out_line, sizeof(out_line),
-                  "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n",
-                  cfg->sample_rate_hz,
-                  (int)cfg->logging_on_flg,
-                  (int)cfg->controller_on_flg);
+                                 "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n"
+                                 "switch_on_direction=%s\r\nswitch_on_depth_mbar=%ld\r\nswitch_off_direction=%s\r\nswitch_off_depth_mbar=%ld\r\n",
+                                 cfg->sample_rate_hz,
+                                 (int)cfg->logging_on_flg,
+                                 (int)cfg->controller_on_flg,
+                                 switch_direction_to_str(cfg->switch_on_direction),
+                                 (long)cfg->switch_on_depth_mbar,
+                                 switch_direction_to_str(cfg->switch_off_direction),
+                                 (long)cfg->switch_off_depth_mbar);
               f_write(&cfg_fp, out_line, len, &bw);
               f_close(&cfg_fp);
               printf("config.cfg updated with missing fields\r\n");
@@ -504,7 +546,6 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
   else {
       printf("config.cfg open error: %d, using defaults\r\n", res);
   }
-
 
 }
 

@@ -28,6 +28,13 @@ system_state_t system_get_state(void)         { return system_state; }
 running_mode_t system_get_running_mode(void)  {return running_mode;}
 bool system_get_single_read_flag(void)        {return single_read_sensor_flag; }
 
+switch_direction_t system_get_switch_on_direction(void)   { return run_time_vars.switch_on_direction; }
+int32_t             system_get_switch_on_depth_mbar(void)  { return run_time_vars.switch_on_depth_mbar; }
+switch_direction_t system_get_switch_off_direction(void)  { return run_time_vars.switch_off_direction; }
+int32_t             system_get_switch_off_depth_mbar(void) { return run_time_vars.switch_off_depth_mbar; }
+
+void system_set_switch_on_depth_mbar(int32_t depth_mbar) { run_time_vars.switch_on_depth_mbar = depth_mbar; }
+
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
 void system_request_single_read(void)          { single_read_sensor_flag = true; }
@@ -35,6 +42,7 @@ void system_clear_single_read_flag(void)       { single_read_sensor_flag = false
 
 static bool buf2_task_is_running = false;
 static bool button_task_is_running = false; // keeps track of if button task is running
+static bool controller_task_is_running = false;
 
 static void executive_task(void *p_arg) {
   (void)p_arg;
@@ -58,7 +66,11 @@ static void executive_task(void *p_arg) {
           running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG;
           run_time_vars.sample_rate_hz = SAMPLE_RATE_HZ_DEFAULT;
           run_time_vars.logging_on_flg = true;
-          run_time_vars.controller_on_flg = false;
+          run_time_vars.controller_on_flg = true;
+          run_time_vars.switch_off_direction = SWITCH_DIRECTION_DOWNCAST;
+          run_time_vars.switch_off_depth_mbar = 200; // milli-bar, near-surface reset
+          run_time_vars.switch_on_direction = SWITCH_DIRECTION_DOWNCAST;
+          run_time_vars.switch_on_depth_mbar = 550; // milli-bar, near-bottom pre-trigger
           single_read_sensor_flag = false;
 
           system_state = SYS_INIT_INFRA_TASKS;
@@ -101,7 +113,7 @@ static void executive_task(void *p_arg) {
           get_sensor_data_task_create(); get_sensor_data_task_suspend_on_boot();
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
-          // TODO: add control task
+          controller_task_create(); controller_task_suspend();
           button_stop_acqu_task_create(); button_stop_acqu_task_suspend();
 
           system_state = SYS_SELF_CHECK;
@@ -153,7 +165,9 @@ static void executive_task(void *p_arg) {
                       retrieve_task_resume();           // pull from circular buf and store on sd card
                   }
                   if (run_time_vars.controller_on_flg){
-                      // TODO: resume controller task
+                      controller_task_resume();
+                      controller_task_is_running=true;
+                      controller_request_print_config();
                   }
                   button_stop_acqu_task_resume(); // resume in full recording path
                   button_task_is_running=true;
@@ -182,7 +196,7 @@ static void executive_task(void *p_arg) {
               if (!single_read_sensor_flag_copy){
                   if (run_time_vars.logging_on_flg) { retrieve_task_suspend(); }
                   if (run_time_vars.controller_on_flg) {
-                      // TODO: put control task suspend here
+                      controller_task_suspend();
                   }
                   if (button_task_is_running){
                       button_stop_acqu_task_suspend();

@@ -9,6 +9,7 @@
 #define MOD_EXECUTIVE_SYSTEM_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define SAMPLE_RATE_HZ_DEFAULT 100 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
 
@@ -29,10 +30,20 @@ typedef enum{
   RUNNING_MODE_AUTO_CONTROL_AND_LOG
 } running_mode_t;
 
+typedef enum {
+  SWITCH_DIRECTION_UPCAST,
+  SWITCH_DIRECTION_DOWNCAST,
+  SWITCH_DIRECTION_BOTH
+} switch_direction_t;
+
 typedef struct {
   unsigned int sample_rate_hz;
   bool         logging_on_flg;
   bool         controller_on_flg;
+  switch_direction_t switch_on_direction;
+  switch_direction_t switch_off_direction;
+  int32_t      switch_on_depth_mbar;
+  int32_t      switch_off_depth_mbar;
 } run_time_variables_t;
 
 void           system_executive_task_create(void);
@@ -43,5 +54,12 @@ void           system_clear_single_read_flag(void);
 system_state_t system_get_state(void);
 running_mode_t system_get_running_mode(void);
 bool system_get_single_read_flag(void);
+
+switch_direction_t system_get_switch_on_direction(void);
+int32_t             system_get_switch_on_depth_mbar(void);
+switch_direction_t system_get_switch_off_direction(void);
+int32_t             system_get_switch_off_depth_mbar(void);
+
+void system_set_switch_on_depth_mbar(int32_t depth_mbar);
 
 #endif /* MOD_EXECUTIVE_SYSTEM_H_ */

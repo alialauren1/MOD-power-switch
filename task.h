@@ -13,6 +13,7 @@ void get_sensor_data_task_create(void);
 void retrieve_data_from_buffer_and_sd_store_task_create(void);
 void retrieve_data_from_buffer2_and_single_read_task_create(void);
 void button_stop_acqu_task_create(void);
+void controller_task_create(void);
 
 // called by mod_executive_system.c in SYS_ACQ stop sequence
 void flush_sd_before_close(void);
@@ -35,9 +36,14 @@ void button_stop_acqu_task_resume(void);
 void retrieve_buf2_task_suspend(void);
 void retrieve_buf2_task_resume(void);
 
+void controller_task_suspend(void);
+void controller_task_resume(void);
+
 void sensor_request_state_reset(void);
 void get_sensor_data_task_suspend(void);
 
 bool keller_sensor_check(void);
+
+void controller_request_print_config(void);
 
 #endif /* TASK_H_ */

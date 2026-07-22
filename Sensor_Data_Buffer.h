@@ -18,14 +18,18 @@ typedef struct {
     int32_t t_centi;
     uint64_t t_ticks;
     int hall;
+    int ctrl_out;
 } sensor_sample_t;
 
 void sensor_data_buffer_init(void);
-bool sensor_data_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall);
+bool sensor_data_buffer_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall,int ctrl_out);
 bool sensor_data_buffer_retrieve(sensor_sample_t *sample);
 bool sensor_data_buffer_is_empty(void);
 
-void sensor_data_buffer2_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall);
+void sensor_data_buffer2_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall,int ctrl_out);
 bool sensor_data_buffer2_retrieve(sensor_sample_t *sample);
+
+void sensor_data_buffer3_store(int32_t p_mbar, int32_t t_centi, uint64_t t_ticks, int hall,int ctrl_out);
+bool sensor_data_buffer3_retrieve(sensor_sample_t *sample);
 
 #endif /* SENSOR_DATA_BUFFER_H_ */
