@@ -549,3 +549,26 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
 
 }
 
+void mod_sd_depth_turnaround_log_AW(uint64_t ticks, int32_t turnaround_depth){
+  FIL log_depth_fp;
+  UINT bw;
+  char log_depth_buf[64];
+
+  TCHAR log_depth_file_name[25]; // 24 TCHAR's, +1 for null
+  mod_sd_ff_encode("depth_turnaround_log.csv",log_depth_file_name,strlen("depth_turnaround_log.csv"));
+  FRESULT fres=f_open(&log_depth_fp,log_depth_file_name,FA_OPEN_ALWAYS|FA_WRITE); // opens if exists, creates depth log file if one doesn't exist already
+
+  if (fres==FR_OK){
+      if(f_size(&log_depth_fp)==0){ // if file header doesn't already exist, make it
+          f_write(&log_depth_fp,"ticks_time_at_depth,turnaround_depth\r\n",strlen("ticks_time_at_depth,turnaround_depth\r\n"),&bw);
+      }
+
+      f_lseek(&log_depth_fp,f_size(&log_depth_fp)); // seek to end so new entries appended and not re-written
+
+      snprintf(log_depth_buf,sizeof(log_depth_buf),"%llu,%d\r\n",ticks,turnaround_depth);
+      f_write(&log_depth_fp,log_depth_buf,strlen(log_depth_buf),&bw);
+      f_close(&log_depth_fp);
+  }
+
+}
+

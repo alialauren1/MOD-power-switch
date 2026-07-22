@@ -670,6 +670,7 @@ void controller_task(void *p_arg) {
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
   bool bottom_turn_around_complete = 0;
+  int prev_hall = -1; // not either of the hall outcomes to prevent false trigger on init
 
   while (1) {
 
@@ -692,6 +693,11 @@ void controller_task(void *p_arg) {
                  (int)(abs(latest_p_mbar) % 1000),
                  latest_hall,
                  GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN));
+
+          if (prev_hall != -1 && latest_hall != prev_hall){
+              mod_sd_depth_turnaround_log_AW(sample3.t_ticks,latest_p_mbar);
+          }
+          prev_hall = latest_hall; // set prev hall
       }
 
       switch (controller_task_state) {
