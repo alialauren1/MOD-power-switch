@@ -60,7 +60,7 @@ static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant o
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
 static volatile bool sd_init_done = false;
 static volatile uint8_t sd_write_prev = 0;
-static void mod_sd_open_sensor_log_AW(void); // AW added, is a forward declaration
+static void mod_sd_open_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
 static char name_buf[16];                  // char array for building filename string "data_xxxx.csv"
 
@@ -201,7 +201,7 @@ void mod_sd_init_task()
   if(res == (FRESULT)RES_OK)
   {
       printf("FATfs mount success\r\n");
-      mod_sd_open_sensor_log_AW();
+      mod_sd_open_AW();
   }
   else
   {
@@ -262,7 +262,7 @@ void mod_sd_create_init_task()
 }
 
 // AW added the following task:
-static void mod_sd_open_sensor_log_AW(void){
+static void mod_sd_open_AW(void){
   UINT bw;                                   // bw (bytes written) so f_write fills this in after the write
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
   FILINFO fno;                                // FatFS file info struct
@@ -313,7 +313,7 @@ bool mod_sd_remount_and_open_AW(void){
       return false;
   }
   printf("Remount success\r\n");
-  mod_sd_open_sensor_log_AW();
+  mod_sd_open_AW();
   if (!mod_sd_is_open_AW()) {
       printf("File open failed after remount.\r\n");
       return false;
@@ -355,7 +355,7 @@ bool mod_sd_write_AW(char *buf, int len){
       if ((int)f_size(&fp) + len >= SD_FILE_MAX_SIZE) {
           f_close(&fp);
           sd_file_open = 0;
-          mod_sd_open_sensor_log_AW(); // find next file name and open it
+          mod_sd_open_AW(); // find next file name and open it
           printf("File size limit reached, opened: %s\r\n", name_buf);
       }
 
@@ -366,7 +366,7 @@ bool mod_sd_write_AW(char *buf, int len){
           printf("SD write error: %d\r\n", fres);
           f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
           sd_file_open = 0;    // clear flag to match closed state
-          mod_sd_open_sensor_log_AW();    // open a fresh file so recovery is automatic
+          mod_sd_open_AW();    // open a fresh file so recovery is automatic
       }
       else {
           FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
@@ -376,7 +376,7 @@ bool mod_sd_write_AW(char *buf, int len){
               printf("SD sync error: %d\r\n", fsync_res);
               f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
               sd_file_open = 0;    // clear flag to match closed state
-              mod_sd_open_sensor_log_AW();    // open a fresh file so recovery is automatic
+              mod_sd_open_AW();    // open a fresh file so recovery is automatic
           }
           else { // LED handling
               if(!sd_write_prev){
