@@ -560,14 +560,29 @@ void mod_sd_depth_turnaround_log_AW(uint64_t ticks, int32_t turnaround_depth){
 
   if (fres==FR_OK){
       if(f_size(&log_depth_fp)==0){ // if file header doesn't already exist, make it
-          f_write(&log_depth_fp,"ticks_time_at_depth,turnaround_depth\r\n",strlen("ticks_time_at_depth,turnaround_depth\r\n"),&bw);
+          f_write(&log_depth_fp,"sec_time_at_depth,turnaround_depth_bar,data_file\r\n",strlen("sec_time_at_depth,turnaround_depth_bar,data_file\r\n"),&bw);
       }
 
       f_lseek(&log_depth_fp,f_size(&log_depth_fp)); // seek to end so new entries appended and not re-written
 
-      snprintf(log_depth_buf,sizeof(log_depth_buf),"%llu,%d\r\n",ticks,turnaround_depth);
+      uint32_t freq = sl_sleeptimer_get_timer_frequency();
+      uint64_t t_sec_whole = ticks / freq;
+      uint64_t t_sec_frac  = ((ticks % freq) * 1000000) / freq;
+
+      snprintf(log_depth_buf,sizeof(log_depth_buf),"%02lu%06lu.%06lu,%c%03d.%03d,%s\r\n",
+               (uint32_t)(t_sec_whole / 1000000),
+               (uint32_t)(t_sec_whole % 1000000),
+               (uint32_t)t_sec_frac,
+               (turnaround_depth<0 ? '-':' '),
+               (int)(abs(turnaround_depth) / 1000),
+               (int)(abs(turnaround_depth) % 1000),
+               mod_sd_get_filename_AW());
+
       f_write(&log_depth_fp,log_depth_buf,strlen(log_depth_buf),&bw);
       f_close(&log_depth_fp);
+  }
+  else {
+      printf("depth turnaround log open error: %d\r\n", fres);
   }
 
 }
