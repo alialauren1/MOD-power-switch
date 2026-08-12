@@ -62,7 +62,7 @@ static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalc
 static int32_t  pressure_sum     = 0;
 static int32_t  temp_sum         = 0;
 static uint32_t avg_sample_counter = 0;
-static uint32_t depth_turnaround_counter = 0;
+static uint32_t depth_bottom_turnaround_counter = 0;
 
 #define HALL_EFFECT_PORT  gpioPortA   // port hall effect signal is attached to
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
@@ -205,9 +205,17 @@ unsigned int get_sample_rate_hz(void){
 }
 
 void config_sample_rate_task(unsigned int rate_hz) {
-    if (rate_hz < 1 || rate_hz > 100) rate_hz = SAMPLE_RATE_HZ_DEFAULT;
-    sample_rate_hz     = rate_hz;
-    avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
+    if (rate_hz < 1 || rate_hz > 100) {
+        rate_hz = SAMPLE_RATE_HZ_DEFAULT;
+        printf("Sample rate out of range, Substituting default\r\n");
+    }
+    avg_sample_count   = (1000 / rate_hz) / TOTAL_INTERVAL_MS;
+    if (avg_sample_count < 1) avg_sample_count =1;
+
+    sample_rate_hz = 1000/(avg_sample_count*TOTAL_INTERVAL_MS);
+    if (sample_rate_hz!= rate_hz){
+        printf("Sample rate %u Hz not achievable, rounded up to %lu Hz\r\n", rate_hz, sample_rate_hz);
+    }
 }
 
 
@@ -697,9 +705,9 @@ void controller_task(void *p_arg) {
 
           if (prev_hall != -1 && latest_hall != prev_hall){
               mod_sd_depth_turnaround_log_AW(sample3.t_ticks,latest_p_mbar);
-              if (prev_hall==0 && latest_hall ==1){
-                  depth_turnaround_counter++;
-                  printf("depth turn around counter %f\r\n",depth_turnaround_counter);
+              if (prev_hall==HALL_EFFECT_DESCENT_STATE && latest_hall ==HALL_EFFECT_ASCENT_STATE){
+                  depth_bottom_turnaround_counter++;
+                  printf("depth bottom turn around counter %lu\r\n",depth_bottom_turnaround_counter);
               }
           }
           prev_hall = latest_hall; // set prev hall
@@ -708,7 +716,7 @@ void controller_task(void *p_arg) {
       switch (controller_task_state) {
         case STATE_PROFILE_EST: {
           printf("CTRL S0\r\n");
-          if (depth_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
+          if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
               controller_task_state= STATE_ON_AND_WAIT;
           }
           break;
