@@ -328,20 +328,27 @@ void mod_sd_close_and_unmount_AW(void) {
     RTOS_ERR err;
     OSMutexPend(&sd_mutex, 0, OS_OPT_PEND_BLOCKING, NULL, &err); // acquire mutex
 
-    if (!sd_file_open) {
-        OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // protecting fp so write and close cant overlap
-        printf("SD card already unmounted.\r\n");
-        return;
+    uint8_t file_open_status = sd_file_open ; // snapshot the file open state before clearing
+
+    if (file_open_status){
+        f_close(&fp); // only close file if it was open
     }
 
     sd_file_open = 0; // clear flag now that mutex is acquired
     sd_write_prev = 0; // clear so next first successful write will trigger the LED to turn on
     OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // release the lock
-    f_close(&fp);
-    f_mount(NULL, (TCHAR*)"", 0); // unmount file system
+
+    f_mount(NULL, (TCHAR*)"", 0); // always unmount regardless of if file was open or not
+
     GPIO_PinOutSet(gpioPortH, 11); // turn off LED
     GPIO_PinOutSet(gpioPortH, 15); // turn off LED
-    printf("SD card safe to remove.\r\n");
+
+    if (file_open_status){
+        printf("SD card safe to remove.\r\n");
+    }
+    else {
+        printf("SD card file was not open (closed earlier due to an error), card was still unmounted.\r\n");
+    }
 }
 
 bool mod_sd_write_AW(char *buf, int len){
@@ -360,6 +367,7 @@ bool mod_sd_write_AW(char *buf, int len){
       }
 
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
+
       if (fres != FR_OK){
           sd_write_prev = 0;
           GPIO_PinOutSet(gpioPortH, 15); // turn LED off, only on transition from ok to failed
@@ -368,6 +376,7 @@ bool mod_sd_write_AW(char *buf, int len){
           sd_file_open = 0;    // clear flag to match closed state
           mod_sd_open_AW();    // open a fresh file so recovery is automatic
       }
+
       else {
           FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
           if (fsync_res != FR_OK){
