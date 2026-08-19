@@ -508,6 +508,7 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
 
           if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){
               if (!mod_sd_is_open_AW()){
+                  mod_sd_write_AW(NULL,0); // attempt recovery
                   break; // if SD card not open, exit loop
               }
 

@@ -42,6 +42,7 @@
 #include "microsd.h"
 
 #define SD_FILE_MAX_SIZE (5*1024*1024) // Keep units in bytes
+#define SD_REMOUNT_FAIL_THRESHOLD 5
 
 //TaskHandle_t mod_sd_init_task_handle;
 //TaskHandle_t mod_sd_cmd_task_handle;
@@ -307,12 +308,43 @@ static void mod_sd_open_AW(void){
 }
 
 bool mod_sd_remount_and_open_AW(void){
+  static uint8_t sd_remount_fail_count = 0;
+  RTOS_ERR err;
+  bool power_cycled_flag = false;
+
   FRESULT res = f_mount(&fat_fs, (TCHAR*)"", 1);
   if (res != FR_OK) {
       printf("Remount failed: %d\r\n", res);
-      return false;
+      sd_remount_fail_count++;
+
+      if (sd_remount_fail_count >= SD_REMOUNT_FAIL_THRESHOLD){
+          printf("Power cycling SD card after %d failed remounts\r\n", sd_remount_fail_count);
+          // TODO change GPIO pin to power off
+          OSTimeDlyHMSM(0,0,1,0,OS_OPT_TIME_HMSM_STRICT,&err);
+          // TODO change GPIO pin to power on
+          sd_remount_fail_count=0;
+          res = f_mount(&fat_fs, (TCHAR*)"", 1);
+          power_cycled_flag = true;
+          if (res!=FR_OK){
+              printf("Remount failed after power cycling: %d\r\n", res);
+           }
+
+      }
+      if (res!=FR_OK){
+          return false;
+       }
+
   }
-  printf("Remount success\r\n");
+
+  if (power_cycled_flag){
+      printf("Remount success after power cycling then f_mount\r\n");
+  }
+  else {
+      printf("Remount success from f_mount alone\r\n");
+  }
+
+  sd_remount_fail_count=0;
+
   mod_sd_open_AW();
   if (!mod_sd_is_open_AW()) {
       printf("File open failed after remount.\r\n");
@@ -357,6 +389,15 @@ bool mod_sd_write_AW(char *buf, int len){
   bool successful_write = false;
   OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire sd_mutex lock before touching fp, protecting fp so write and close cant overlap
 
+  if (!sd_file_open) {
+       mod_sd_remount_and_open_AW();
+   }
+
+   if (buf == NULL) {
+       OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);
+       return sd_file_open;
+   }
+
   if(sd_file_open){
 
       if ((int)f_size(&fp) + len >= SD_FILE_MAX_SIZE) {
@@ -375,6 +416,9 @@ bool mod_sd_write_AW(char *buf, int len){
           f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
           sd_file_open = 0;    // clear flag to match closed state
           mod_sd_open_AW();    // open a fresh file so recovery is automatic
+          if (!sd_file_open){
+              mod_sd_remount_and_open_AW();
+          }
       }
 
       else {
@@ -386,6 +430,9 @@ bool mod_sd_write_AW(char *buf, int len){
               f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
               sd_file_open = 0;    // clear flag to match closed state
               mod_sd_open_AW();    // open a fresh file so recovery is automatic
+              if (!sd_file_open){
+                  mod_sd_remount_and_open_AW();
+              }
           }
           else { // LED handling
               if(!sd_write_prev){
