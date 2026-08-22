@@ -62,7 +62,10 @@ static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalc
 static int32_t  pressure_sum     = 0;
 static int32_t  temp_sum         = 0;
 static uint32_t avg_sample_counter = 0;
-static uint32_t depth_bottom_turnaround_counter = 0;
+static volatile uint32_t depth_bottom_turnaround_counter = 0;
+
+static volatile int      prev_hall = -1; // not either of the hall outcomes to prevent false trigger on init
+static volatile int32_t  last_bottom_turnaround_depth_mbar = 0; // new
 
 #define HALL_EFFECT_PORT  gpioPortA   // port hall effect signal is attached to
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
@@ -185,6 +188,7 @@ void clear_acqu_data_accumulators(void){
   pressure_sum       = 0;
   temp_sum           = 0;
   avg_sample_counter = 0;
+  prev_hall = -1; //reset so the first sample of next start_Acqu doesnt get misinterpretted
   sensor_sample_t discard;
   while (sensor_data_buffer_retrieve(&discard)) {}
 }
@@ -512,6 +516,17 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
                   break; // if SD card not open, exit loop
               }
 
+              // turn around detection, inside the sd guard so a flip with no open file is dropped
+                           if (prev_hall != -1 && sample.hall != prev_hall){
+                               mod_sd_depth_turnaround_log_AW(sample.t_ticks, sample.p_mbar);
+
+                               if (prev_hall == HALL_EFFECT_DESCENT_STATE && sample.hall == HALL_EFFECT_ASCENT_STATE){
+                                   last_bottom_turnaround_depth_mbar = sample.p_mbar; // bottom turn around, deepest point of the profile
+                                   depth_bottom_turnaround_counter++;
+                                   printf("depth bottom turn around counter %lu\r\n", depth_bottom_turnaround_counter);
+                               }
+                           }
+
               int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
                                            "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d,%d\r\n",
                                            (sample.p_mbar<0 ? '-':' '),
@@ -540,6 +555,7 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
               }
           }
 
+          prev_hall = sample.hall;
       }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
@@ -680,12 +696,11 @@ void controller_task(void *p_arg) {
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
   bool bottom_turn_around_complete = 0;
-  int prev_hall = -1; // not either of the hall outcomes to prevent false trigger on init
 
   while (1) {
 
       if (controller_print_config_on_resume) {
-//          printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
+          printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
                  switch_dir_to_str(system_get_switch_on_direction()),
                  (long)system_get_switch_on_depth_mbar(),
                  switch_dir_to_str(system_get_switch_off_direction()),
@@ -697,33 +712,24 @@ void controller_task(void *p_arg) {
           latest_p_mbar = sample3.p_mbar ; //update values
           latest_hall = sample3.hall;
 
-//          printf("CTRL: p=%c%03d.%03d bar, hall=%d, ctrl_out=%d\r\n",
+          printf("CTRL: p=%c%03d.%03d bar, hall=%d, ctrl_out=%d\r\n",
                  (latest_p_mbar<0 ? '-':' '),
                  (int)(abs(latest_p_mbar) / 1000),
                  (int)(abs(latest_p_mbar) % 1000),
                  latest_hall,
                  GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN));
-
-          if (prev_hall != -1 && latest_hall != prev_hall){
-              mod_sd_depth_turnaround_log_AW(sample3.t_ticks,latest_p_mbar);
-              if (prev_hall==HALL_EFFECT_DESCENT_STATE && latest_hall ==HALL_EFFECT_ASCENT_STATE){
-                  depth_bottom_turnaround_counter++;
-                  printf("depth bottom turn around counter %lu\r\n",depth_bottom_turnaround_counter);
-              }
-          }
-          prev_hall = latest_hall; // set prev hall
       }
 
       switch (controller_task_state) {
         case STATE_PROFILE_EST: {
-//          printf("CTRL S0\r\n");
+          printf("CTRL S0\r\n");
           if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
               controller_task_state= STATE_ON_AND_WAIT;
           }
           break;
         }
         case STATE_ON_AND_WAIT: {
-//          printf("CTRL S1\r\n");
+          printf("CTRL S1\r\n");
 
           if (system_get_switch_on_direction()!=SWITCH_DIRECTION_BOTH){
               switch_direction_t off_dir = system_get_switch_off_direction();
@@ -747,13 +753,13 @@ void controller_task(void *p_arg) {
           break;
         }
         case STATE_TURN_OFF: {
-//          printf("CTRL S2\r\n");
+          printf("CTRL S2\r\n");
           GPIO_PinOutClear(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // LOW = instrument OFF
           controller_task_state = STATE_OFF_AND_WAIT;
           break;
         }
         case STATE_OFF_AND_WAIT: {
-//          printf("CTRL S3\r\n");
+          printf("CTRL S3\r\n");
           switch_direction_t on_dir = system_get_switch_on_direction();
           int32_t on_depth = system_get_switch_on_depth_mbar();
           if (on_dir == SWITCH_DIRECTION_DOWNCAST && ((latest_hall == HALL_EFFECT_DESCENT_STATE && latest_p_mbar >= on_depth) || latest_hall == HALL_EFFECT_ASCENT_STATE)) {
@@ -765,7 +771,7 @@ void controller_task(void *p_arg) {
           break;
         }
         case STATE_TURN_ON: {
-//          printf("CTRL S4\r\n");
+          printf("CTRL S4\r\n");
           GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
           bottom_turn_around_complete = false; // reset, haven't seen opposite direction since this was ON
           controller_task_state = STATE_ON_AND_WAIT;
