@@ -181,7 +181,7 @@ void controller_task(void *p_arg); // forward declaration
 
 //----------------------------------Sub Tasks--------------------------------------------------------------
 
-void reset_block_avg_data_accumulators(void){
+void clear_acqu_data_accumulators(void){
   pressure_sum       = 0;
   temp_sum           = 0;
   avg_sample_counter = 0;
@@ -685,7 +685,7 @@ void controller_task(void *p_arg) {
   while (1) {
 
       if (controller_print_config_on_resume) {
-          printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
+//          printf("CTRL config: on_dir=%s on_depth=%ld off_dir=%s off_depth=%ld\r\n",
                  switch_dir_to_str(system_get_switch_on_direction()),
                  (long)system_get_switch_on_depth_mbar(),
                  switch_dir_to_str(system_get_switch_off_direction()),
@@ -697,7 +697,7 @@ void controller_task(void *p_arg) {
           latest_p_mbar = sample3.p_mbar ; //update values
           latest_hall = sample3.hall;
 
-          printf("CTRL: p=%c%03d.%03d bar, hall=%d, ctrl_out=%d\r\n",
+//          printf("CTRL: p=%c%03d.%03d bar, hall=%d, ctrl_out=%d\r\n",
                  (latest_p_mbar<0 ? '-':' '),
                  (int)(abs(latest_p_mbar) / 1000),
                  (int)(abs(latest_p_mbar) % 1000),
@@ -716,14 +716,14 @@ void controller_task(void *p_arg) {
 
       switch (controller_task_state) {
         case STATE_PROFILE_EST: {
-          printf("CTRL S0\r\n");
+//          printf("CTRL S0\r\n");
           if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
               controller_task_state= STATE_ON_AND_WAIT;
           }
           break;
         }
         case STATE_ON_AND_WAIT: {
-          printf("CTRL S1\r\n");
+//          printf("CTRL S1\r\n");
 
           if (system_get_switch_on_direction()!=SWITCH_DIRECTION_BOTH){
               switch_direction_t off_dir = system_get_switch_off_direction();
@@ -747,13 +747,13 @@ void controller_task(void *p_arg) {
           break;
         }
         case STATE_TURN_OFF: {
-          printf("CTRL S2\r\n");
+//          printf("CTRL S2\r\n");
           GPIO_PinOutClear(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // LOW = instrument OFF
           controller_task_state = STATE_OFF_AND_WAIT;
           break;
         }
         case STATE_OFF_AND_WAIT: {
-          printf("CTRL S3\r\n");
+//          printf("CTRL S3\r\n");
           switch_direction_t on_dir = system_get_switch_on_direction();
           int32_t on_depth = system_get_switch_on_depth_mbar();
           if (on_dir == SWITCH_DIRECTION_DOWNCAST && ((latest_hall == HALL_EFFECT_DESCENT_STATE && latest_p_mbar >= on_depth) || latest_hall == HALL_EFFECT_ASCENT_STATE)) {
@@ -765,7 +765,7 @@ void controller_task(void *p_arg) {
           break;
         }
         case STATE_TURN_ON: {
-          printf("CTRL S4\r\n");
+//          printf("CTRL S4\r\n");
           GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
           bottom_turn_around_complete = false; // reset, haven't seen opposite direction since this was ON
           controller_task_state = STATE_ON_AND_WAIT;

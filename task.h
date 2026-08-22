@@ -17,7 +17,7 @@ void controller_task_create(void);
 
 // called by mod_executive_system.c in SYS_ACQ stop sequence
 void flush_sd_before_close(void);
-void reset_block_avg_data_accumulators(void);
+void clear_acqu_data_accumulators(void);
 
 // called by mod_executive_system.c in SYS_CONFIG and cli.c with set_config
 void config_sample_rate_task(unsigned int rate_hz);

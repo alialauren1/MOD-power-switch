@@ -207,7 +207,7 @@ static void executive_task(void *p_arg) {
               }
 
               get_sensor_data_task_suspend();
-              reset_block_avg_data_accumulators();
+              clear_acqu_data_accumulators();
               if (buf2_task_is_running) {retrieve_buf2_task_suspend(); buf2_task_is_running=false;}
 
               system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // shared by both paths
