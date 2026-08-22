@@ -779,6 +779,6 @@ void controller_task(void *p_arg) {
         }
       }
 
-      OSTimeDly(1000, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(100, OS_OPT_TIME_DLY, &err);
   }
 }
