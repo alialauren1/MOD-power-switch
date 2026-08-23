@@ -224,6 +224,7 @@ static void executive_task(void *p_arg) {
         case SYS_ERR: {
           if (state_entry) {
               printf("S8: entered SYS_ERR\r\n");
+              GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure pin is driven
               GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
               printf("set power ON if wasn't already, error default\r\n");
           }
