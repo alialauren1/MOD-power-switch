@@ -65,7 +65,8 @@ static uint32_t avg_sample_counter = 0;
 static volatile uint32_t depth_bottom_turnaround_counter = 0;
 
 static volatile int      prev_hall = -1; // not either of the hall outcomes to prevent false trigger on init
-static volatile int32_t  last_bottom_turnaround_depth_mbar = 0; // new
+static volatile int32_t  last_bottom_turnaround_depth_mbar = EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT;
+static int32_t           switch_on_lag_mbar = 0; // derived once in STATE_CONTROLLER_INIT
 
 #define HALL_EFFECT_PORT  gpioPortA   // port hall effect signal is attached to
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
@@ -109,6 +110,7 @@ static CPU_STK controller_stk[CONTROLLER_TASK_STK_SIZE];
 static OS_TCB  controller_tcb;
 
 typedef enum {
+    STATE_CONTROLLER_INIT,
     STATE_PROFILE_EST,
     STATE_ON_AND_WAIT,
     STATE_TURN_OFF,
@@ -222,6 +224,7 @@ void config_sample_rate_task(unsigned int rate_hz) {
     }
 }
 
+void config_expected_turnaround_task(int32_t expected_mbar) {last_bottom_turnaround_depth_mbar = expected_mbar;}
 
 void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
@@ -243,7 +246,7 @@ static bool controller_print_config_on_resume = false; // flag for telling when 
 void controller_request_print_config(void) { controller_print_config_on_resume = true; }
 
 static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
-static controller_state_t controller_task_state = STATE_PROFILE_EST;
+static controller_state_t controller_task_state = STATE_CONTROLLER_INIT;
 
 void get_sensor_data_task_suspend(void) {
     RTOS_ERR err;
@@ -721,6 +724,31 @@ void controller_task(void *p_arg) {
       }
 
       switch (controller_task_state) {
+        case STATE_CONTROLLER_INIT: {
+          printf("CTRL S0A\r\n");
+
+          if (system_get_switch_on_direction()==SWITCH_DIRECTION_DOWNCAST){
+              switch_on_lag_mbar = system_get_expected_bottom_turnaround_depth_mbar()
+                                 - system_get_switch_on_depth_mbar();
+              if (switch_on_lag_mbar < 0){
+                  printf("CTRL S0A: switch_on_depth (%ld) deeper than expected turn around (%ld), lag set to 0\r\n",
+                         (long)system_get_switch_on_depth_mbar(),
+                         (long)system_get_expected_bottom_turnaround_depth_mbar());
+                  switch_on_lag_mbar = 0;
+              }
+              if (switch_on_lag_mbar > 0) {
+
+              }
+          }
+          else {
+              switch_on_lag_mbar = 0; // TODO: UPCAST needs an expected TOP turn around, BOTH never triggers
+          }
+          printf("CTRL S0A: lag = %ld mbar\r\n", (long)switch_on_lag_mbar);
+
+          controller_task_state = STATE_PROFILE_EST;
+          break;
+        }
+
         case STATE_PROFILE_EST: {
           printf("CTRL S0\r\n");
           if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles

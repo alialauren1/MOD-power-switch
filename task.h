@@ -8,6 +8,8 @@
 #ifndef TASK_H_
 #define TASK_H_
 
+#include <stdint.h>
+
 // called by mod_executive_system.c in SYS_INIT_ACQ_TASKS
 void get_sensor_data_task_create(void);
 void retrieve_data_from_buffer_and_sd_store_task_create(void);
@@ -21,6 +23,7 @@ void clear_acqu_data_accumulators(void);
 
 // called by mod_executive_system.c in SYS_CONFIG and cli.c with set_config
 void config_sample_rate_task(unsigned int rate_hz);
+void config_expected_turnaround_task(int32_t expected_mbar);
 
 // called by cli.c with set_config
 unsigned int get_sample_rate_hz(void);

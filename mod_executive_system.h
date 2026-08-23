@@ -13,6 +13,8 @@
 
 #define SAMPLE_RATE_HZ_DEFAULT 100 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
 
+#define EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT 700 // expected bottom turn around, fills last_bottom_turnaround_depth_mbar until one is measured
+
 typedef enum {
   SYS_STARTUP,
   SYS_INIT_INFRA_TASKS,
@@ -44,6 +46,7 @@ typedef struct {
   switch_direction_t switch_off_direction;
   int32_t      switch_on_depth_mbar;
   int32_t      switch_off_depth_mbar;
+  int32_t      expected_bottom_turnaround_depth_mbar;
 } run_time_variables_t;
 
 void           system_executive_task_create(void);
@@ -55,11 +58,14 @@ system_state_t system_get_state(void);
 running_mode_t system_get_running_mode(void);
 bool system_get_single_read_flag(void);
 
+int32_t             system_get_expected_bottom_turnaround_depth_mbar(void);
+
 switch_direction_t system_get_switch_on_direction(void);
 int32_t             system_get_switch_on_depth_mbar(void);
 switch_direction_t system_get_switch_off_direction(void);
 int32_t             system_get_switch_off_depth_mbar(void);
 
 void system_set_switch_on_depth_mbar(int32_t depth_mbar);
+void system_set_switch_on_direction(switch_direction_t dir);
 
 #endif /* MOD_EXECUTIVE_SYSTEM_H_ */
