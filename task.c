@@ -75,9 +75,6 @@ static int32_t           switch_on_lag_mbar = 0; // derived once in STATE_CONTRO
 #define HALL_EFFECT_DESCENT_STATE 0 // when magnet is aligned, output it low, system on descent
 #define HALL_EFFECT_ASCENT_STATE (!HALL_EFFECT_DESCENT_STATE)
 
-#define CONTROLLER_OUTPUT_PORT  gpioPortA
-#define CONTROLLER_OUTPUT_PIN   13 // active-low "cut power" line: HIGH (default) = instrument ON (fail-safe), LOW = instrument OFF
-
 typedef enum {
     STATE_WRITE,
     STATE_WAIT,
