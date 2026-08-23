@@ -733,8 +733,11 @@ void controller_task(void *p_arg) {
                          (long)system_get_expected_bottom_turnaround_depth_mbar());
                   switch_on_lag_mbar = 0;
               }
-              if (switch_on_lag_mbar > 0) {
-
+              else if (switch_on_lag_mbar > system_get_expected_bottom_turnaround_depth_mbar()) {
+                  printf("CTRL S0A: switch_on_depth (%ld) is above the surface, cannot ever trigger. Falling back to BOTH, instrument stays ON\r\n",
+                                           (long)system_get_switch_on_depth_mbar());
+                  system_set_switch_on_direction(SWITCH_DIRECTION_BOTH);
+                  switch_on_lag_mbar = 0;   // meaningless once direction is BOTH
               }
           }
           else {
