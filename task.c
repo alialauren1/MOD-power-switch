@@ -752,10 +752,25 @@ void controller_task(void *p_arg) {
         case STATE_PROFILE_EST: {
           printf("CTRL S0\r\n");
           if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
+
+              int32_t measured_depth  = last_bottom_turnaround_depth_mbar; // single read, the logger task writes this
+              int32_t corrected_switch_on_depth = measured_depth - switch_on_lag_mbar;
+
+              if (corrected_switch_on_depth <= 0){
+                  printf("CTRL S0: measured turn around %ld mbar implausible, keeping switch_on_depth at %ld mbar\r\n",
+                         (long)measured_depth, (long)system_get_switch_on_depth_mbar());
+              }
+              else {
+                  system_set_switch_on_depth_mbar(corrected_switch_on_depth);
+                  printf("CTRL S0: measured %ld mbar, lag %ld mbar, switch_on_depth corrected to %ld mbar\r\n",
+                         (long)measured_depth, (long)switch_on_lag_mbar, (long)corrected_switch_on_depth);
+              }
+
               controller_task_state= STATE_ON_AND_WAIT;
           }
           break;
         }
+
         case STATE_ON_AND_WAIT: {
           printf("CTRL S1\r\n");
 
