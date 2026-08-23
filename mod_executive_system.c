@@ -98,6 +98,7 @@ static void executive_task(void *p_arg) {
           if (mod_sd_is_open_AW()) {
               mod_sd_load_config_AW(&run_time_vars);
               config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to default
+              config_expected_turnaround_task(run_time_vars.expected_bottom_turnaround_depth_mbar);
           } else {
               printf("S2: SD not available, using defaults\r\n");
           }

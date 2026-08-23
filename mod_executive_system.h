@@ -14,7 +14,7 @@
 
 #define SAMPLE_RATE_HZ_DEFAULT 100 // default, allowable range is 1 Hz (1 s) to 100 Hz (0.01 sec)
 
-#define EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT 700 // expected bottom turn around, fills last_bottom_turnaround_depth_mbar until one is measured
+#define EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT 600 // expected bottom turn around, fills last_bottom_turnaround_depth_mbar until one is measured
 
 #define CONTROLLER_OUTPUT_PORT  gpioPortA
 #define CONTROLLER_OUTPUT_PIN   13 // active-low "cut power" line: HIGH (default) = instrument ON (fail-safe), LOW = instrument OFF
