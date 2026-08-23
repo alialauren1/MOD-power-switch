@@ -60,7 +60,7 @@ void start_acquisition_cmd(sl_cli_command_arg_t *arguments);
 void stop_acquisition_cmd(sl_cli_command_arg_t *arguments);
 void read_sensors_cmd(sl_cli_command_arg_t *arguments);
 
-void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments);
+//void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -153,11 +153,11 @@ static const sl_cli_command_info_t cmd__read_sensors = \
                  "",
                  { SL_CLI_ARG_END, });
 
-static const sl_cli_command_info_t cmd__set_switch_on_depth = \
-  SL_CLI_COMMAND(set_switch_on_depth_cmd,
-                 "set switch_on_depth_mbar, only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE",
-                 "depth_mbar",
-                 { SL_CLI_ARG_INT32, SL_CLI_ARG_END, });
+//static const sl_cli_command_info_t cmd__set_switch_on_depth = \
+//  SL_CLI_COMMAND(set_switch_on_depth_cmd,
+//                 "set switch_on_depth_mbar, only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE",
+//                 "depth_mbar",
+//                 { SL_CLI_ARG_INT32, SL_CLI_ARG_END, });
 
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
@@ -174,7 +174,7 @@ static sl_cli_command_entry_t a_table[] = {
   { "start_acqu", &cmd__start_acquisition, false },
   { "stop_acqu",  &cmd__stop_acquisition,  false },
   { "read_sensors",    &cmd__read_sensors,    false },
-  { "set_switch_on_depth", &cmd__set_switch_on_depth, false },
+//  { "set_switch_on_depth", &cmd__set_switch_on_depth, false },
   { NULL, NULL, false },
 };
 
@@ -589,21 +589,21 @@ void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
     system_request_single_read(); //sets flag to true
 }
 
-/****************************************************************************//**
- * Callback for set_switch_on_depth_cmd
- *
- * The command is used to change the value of the switching on depth
- ******************************************************************************/
-void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments) {
-    if (system_get_state() != SYS_RUNNING_MODE_CHECK_AND_IDLE) {
-        printf("need to stop acqu and go into SYS_RUNNING_MODE_CHECK_AND_IDLE first\r\n");
-        return;
-    }
-
-    int32_t depth_mbar = sl_cli_get_argument_int32(arguments, 0);
-    system_set_switch_on_depth_mbar(depth_mbar);
-    printf("switch_on_depth_mbar set to %ld\r\n", (long)depth_mbar);
-}
+///****************************************************************************//**
+// * Callback for set_switch_on_depth_cmd
+// *
+// * The command is used to change the value of the switching on depth
+// ******************************************************************************/
+//void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments) {
+//    if (system_get_state() != SYS_RUNNING_MODE_CHECK_AND_IDLE) {
+//        printf("need to stop acqu and go into SYS_RUNNING_MODE_CHECK_AND_IDLE first\r\n");
+//        return;
+//    }
+//
+//    int32_t depth_mbar = sl_cli_get_argument_int32(arguments, 0);
+//    system_set_switch_on_depth_mbar(depth_mbar);
+//    printf("switch_on_depth_mbar set to %ld\r\n", (long)depth_mbar);
+//}
 
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
