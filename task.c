@@ -696,6 +696,7 @@ void controller_task(void *p_arg) {
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
   bool bottom_turn_around_complete = 0;
+  uint32_t prev_counter = 0;
 
   while (1) {
 
@@ -752,19 +753,6 @@ void controller_task(void *p_arg) {
         case STATE_PROFILE_EST: {
           printf("CTRL S0\r\n");
           if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
-
-              int32_t measured_depth  = last_bottom_turnaround_depth_mbar; // single read, the logger task writes this
-              int32_t corrected_switch_on_depth = measured_depth - switch_on_lag_mbar;
-
-              if (corrected_switch_on_depth <= 0){
-                  printf("CTRL S0: measured turn around %ld mbar implausible, keeping switch_on_depth at %ld mbar\r\n",
-                         (long)measured_depth, (long)system_get_switch_on_depth_mbar());
-              }
-              else {
-                  system_set_switch_on_depth_mbar(corrected_switch_on_depth);
-                  printf("CTRL S0: measured %ld mbar, lag %ld mbar, switch_on_depth corrected to %ld mbar\r\n",
-                         (long)measured_depth, (long)switch_on_lag_mbar, (long)corrected_switch_on_depth);
-              }
 
               controller_task_state= STATE_ON_AND_WAIT;
           }
@@ -823,5 +811,23 @@ void controller_task(void *p_arg) {
       }
 
       OSTimeDly(100, OS_OPT_TIME_DLY, &err);
+
+      // continuous adaptation: re-correct every time the logger records a new bottom turn around
+      if (depth_bottom_turnaround_counter != prev_counter) {
+          prev_counter = depth_bottom_turnaround_counter; // fire when new measurement of depth turnaround
+
+          int32_t measured_depth  = last_bottom_turnaround_depth_mbar; // single read, the logger task writes this
+          int32_t corrected_switch_on_depth = measured_depth - switch_on_lag_mbar;
+          if (corrected_switch_on_depth <= 0){
+              printf("measured turn around %ld mbar implausible, keeping switch_on_depth at %ld mbar\r\n",
+                     (long)measured_depth, (long)system_get_switch_on_depth_mbar());
+          }
+          else {
+              system_set_switch_on_depth_mbar(corrected_switch_on_depth);
+              printf("measured %ld mbar, lag %ld mbar, switch_on_depth corrected to %ld mbar\r\n",
+                     (long)measured_depth, (long)switch_on_lag_mbar, (long)corrected_switch_on_depth);
+          }
+      }
+
   }
 }
