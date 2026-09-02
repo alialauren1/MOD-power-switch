@@ -221,6 +221,10 @@ void config_sample_rate_task(unsigned int rate_hz) {
     }
 }
 
+static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
+static controller_state_t controller_task_state = STATE_CONTROLLER_INIT;
+static volatile bool bottom_turn_around_complete = 0; // set to false
+
 void config_expected_turnaround_task(int32_t expected_mbar) {last_bottom_turnaround_depth_mbar = expected_mbar;}
 
 void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
@@ -232,7 +236,17 @@ void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retri
 void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_acqu_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
 void controller_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&controller_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
-void controller_task_resume(void)  { RTOS_ERR err; OSTaskResume(&controller_tcb, &err); }
+
+void controller_task_resume(void)  {
+  RTOS_ERR err;
+
+  if (controller_task_state != STATE_CONTROLLER_INIT) { // ensure S0A runs on first resume (on boot)
+      controller_task_state = STATE_ON_AND_WAIT; // ensure system starts  at in on state
+      bottom_turn_around_complete = false;
+
+  }
+
+  OSTaskResume(&controller_tcb, &err); }
 
 static bool sensor_state_reset_on_resume = false;
 void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
@@ -241,9 +255,6 @@ bool keller_sensor_check(void) { return keller_p_sensor_init(); }
 
 static bool controller_print_config_on_resume = false; // flag for telling when we reenter controller task so we can print config
 void controller_request_print_config(void) { controller_print_config_on_resume = true; }
-
-static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
-static controller_state_t controller_task_state = STATE_CONTROLLER_INIT;
 
 void get_sensor_data_task_suspend(void) {
     RTOS_ERR err;
@@ -695,7 +706,6 @@ void controller_task(void *p_arg) {
   sensor_sample_t sample3;
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
-  bool bottom_turn_around_complete = 0;
   uint32_t prev_counter = 0;
 
   while (1) {

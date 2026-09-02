@@ -203,6 +203,9 @@ static void executive_task(void *p_arg) {
                   if (run_time_vars.controller_on_flg) {
                       controller_task_suspend();
                   }
+                  if (!GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN)) {   // TODO: make this a function can handle software & hardware power switch checking
+                      GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure payloads have power to them, TODO: this may evolve to a software switch
+                  }
                   if (button_task_is_running){
                       button_stop_acqu_task_suspend();
                       button_task_is_running = false;
