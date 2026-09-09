@@ -186,14 +186,17 @@ static void executive_task(void *p_arg) {
                   buf2_task_is_running = true;
               }
           }
-
-          if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG && !single_read_sensor_flag){ // single read while in ACQU state, resume buf2 task to print value
+          if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG && !single_read_sensor_flag){ // no single read bending, suspend buf2 if still running
               if (buf2_task_is_running == true) {
                   retrieve_buf2_task_suspend();
                   buf2_task_is_running=false;
               }
           }
 
+          if (p_sensor_failed()){
+              system_request_stop_acquisition(); // if critical sensor error occurs, call to stop acquisition
+              system_clear_single_read_flag();   // don't allow broken sensor to address pending single read
+          }
 
           // Exiting: only running_mode = idle and no pending single read
           if (running_mode == RUNNING_MODE_IDLE && !single_read_sensor_flag){
@@ -218,7 +221,12 @@ static void executive_task(void *p_arg) {
               clear_acqu_data_accumulators();
               if (buf2_task_is_running) {retrieve_buf2_task_suspend(); buf2_task_is_running=false;}
 
-              system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // shared by both paths
+              if (p_sensor_failed()){
+                  system_state = SYS_ERR; // critical sensor error, go to SYS ERR to default payloads ON
+              }
+              else {
+                  system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // regular requested stop
+              }
           }
 
           break;

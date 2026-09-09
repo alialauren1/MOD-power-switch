@@ -515,6 +515,10 @@ void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
 
     // This is to ensure you cant run this command prior to completing init states
     system_state_t state = system_get_state();
+    if (state  == SYS_ERR){
+        printf("command not available: system in SYS_ERR, power cycle required\r\n");
+        return;
+    }
     if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
         printf("command not available: system not fully initialized\r\n");
         return;
@@ -546,6 +550,10 @@ void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
 
     // This is to ensure you cant run this command prior to completing init states
     system_state_t state = system_get_state();
+    if (state  == SYS_ERR){
+        printf("command not available: system in SYS_ERR, power cycle required\r\n");
+        return;
+    }
     if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
         printf("command not available: system not fully initialized\r\n");
         return;
@@ -574,6 +582,10 @@ void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
 
     // This is to ensure you cant run this command prior to completing init states
     system_state_t state = system_get_state();
+    if (state  == SYS_ERR){
+        printf("command not available: system in SYS_ERR, power cycle required\r\n");
+        return;
+    }
     if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
         printf("command not available: system not fully initialized\r\n");
         return;

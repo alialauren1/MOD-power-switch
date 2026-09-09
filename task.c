@@ -181,6 +181,33 @@ void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward de
 void button_stop_acqu_task(void *p_arg); // forward declaration
 void controller_task(void *p_arg); // forward declaration
 
+//----------------------------------ERR handling to executive S8: Worst Case Scenario Defaults to Payloads ON----------------------------------------
+
+typedef enum {
+    P_SENSOR_ERR_I2C_RETRY,     // 0: startup retry loop
+    P_SENSOR_ERR_TRIGGER,       // 1: I2C trigger write failed
+    P_SENSOR_ERR_READ,          // 2: I2C read failed
+    P_SENSOR_ERR_MEM,           // 3: sensor checksum failed
+    P_SENSOR_ERR_COUNT          // 4: not an error, the array size
+} p_sensor_err_t;
+
+static volatile uint32_t p_sensor_err_cnt[P_SENSOR_ERR_COUNT]={0};            // start count off at 0
+static const uint32_t p_sensor_err_limit[P_SENSOR_ERR_COUNT]={10,500,500,2};  // 1:3 based on how often each error occurs in a loop, 4 is based on mem checksum failing
+static volatile bool p_sensor_err_flag = false;                               // flag will cause system to stick itself in S8 of executive task (default payloads on, stop acqu)
+
+static void p_sensor_err_record(p_sensor_err_t n){                            // copies index error into n to tell which error has occured
+  if (++p_sensor_err_cnt[n]>=p_sensor_err_limit[n]) {
+      printf("P SENSOR FAILED: error %d , count: %lu\r\n",(int)n, p_sensor_err_cnt[n]);
+      p_sensor_err_flag = true;                                               // for executive to see
+  }
+}
+
+static void p_sensor_err_reset_counts(void){                                  // clears error counters
+  for (int i=0; i<P_SENSOR_ERR_COUNT;i++){ p_sensor_err_cnt[i]=0; }
+}
+
+bool p_sensor_failed(void) {return p_sensor_err_flag;}                        // executive in other file needs to see this flag
+
 //----------------------------------Sub Tasks--------------------------------------------------------------
 
 void clear_acqu_data_accumulators(void){
@@ -237,6 +264,14 @@ void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_s
 void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
 void controller_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&controller_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 
+void get_sensor_data_task_suspend(void) {
+    RTOS_ERR err;
+    while (sensor_task_state != STATE_DELAY && !p_sensor_err_flag) { // don't suspend until in DELAY or critical err flag has been risen
+        OSTimeDly(1, OS_OPT_TIME_DLY, &err);
+    }
+    OSTaskSuspend(&sensor_tcb, &err);
+}
+
 void controller_task_resume(void)  {
   RTOS_ERR err;
 
@@ -255,14 +290,6 @@ bool keller_sensor_check(void) { return keller_p_sensor_init(); }
 
 static bool controller_print_config_on_resume = false; // flag for telling when we reenter controller task so we can print config
 void controller_request_print_config(void) { controller_print_config_on_resume = true; }
-
-void get_sensor_data_task_suspend(void) {
-    RTOS_ERR err;
-    while (sensor_task_state != STATE_DELAY) {
-        OSTimeDly(1, OS_OPT_TIME_DLY, &err);
-    }
-    OSTaskSuspend(&sensor_tcb, &err);
-}
 
 //-----------------------------Acquisition Tasks-----------------------------------------------------
 
@@ -295,7 +322,8 @@ void get_sensor_data_task(void *p_arg)
   while(!keller_p_sensor_ok){
       keller_p_sensor_ok = keller_p_sensor_init();
       if(!keller_p_sensor_ok){
-          printf("ERROR: No I2C ACK, retrying...\r\n");
+          printf("ERROR: I2C transfer, retrying...\r\n");
+          p_sensor_err_record(P_SENSOR_ERR_I2C_RETRY);
           OSTimeDlyHMSM(0, 0, 0, 500, OS_OPT_TIME_HMSM_STRICT, &delay_err);
       }
   }
@@ -352,6 +380,7 @@ void get_sensor_data_task(void *p_arg)
               }
               else if (!trigger_ok) {
                   printf("ERROR: trigger write failed\r\n");
+                  p_sensor_err_record(P_SENSOR_ERR_TRIGGER);
                   sensor_task_state = STATE_DELAY;
               }
               else {
@@ -377,8 +406,11 @@ void get_sensor_data_task(void *p_arg)
                       }
                       else if (status & STATUS_MEM_ERR_BIT) {
                           printf("ERROR: Sensor memory error\r\n");
+                          p_sensor_err_record(P_SENSOR_ERR_MEM);
                       }
                       else {
+                          p_sensor_err_reset_counts(); // reset err counts
+
                           pressure = (uint16_t)((raw[1] << 8) | raw[2]);
                           temp_raw = (uint16_t)((raw[3] << 8) | raw[4]);
                           p_mbar  = (int32_t)(((int64_t)pressure - 16384) * 100000 / 32768);
@@ -455,6 +487,7 @@ void get_sensor_data_task(void *p_arg)
               }
               else if (!read_ok) {
                   printf("ERROR: I2C read failed\r\n");
+                  p_sensor_err_record(P_SENSOR_ERR_READ);
                   sensor_task_state = STATE_DELAY;
               }
               else {

@@ -46,6 +46,7 @@ void sensor_request_state_reset(void);
 void get_sensor_data_task_suspend(void);
 
 bool keller_sensor_check(void);
+bool p_sensor_failed(void);
 
 void controller_request_print_config(void);
 
