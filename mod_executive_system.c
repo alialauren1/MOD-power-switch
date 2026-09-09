@@ -239,6 +239,10 @@ static void executive_task(void *p_arg) {
               GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure pin is driven
               GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
               printf("set power ON if wasn't already, error default\r\n");
+              if (mod_sd_is_open_AW()) {
+                  flush_sd_before_close();
+                  mod_sd_close_and_unmount_AW();
+              }
           }
 
           break;
