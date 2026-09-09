@@ -276,7 +276,7 @@ void controller_task_resume(void)  {
   RTOS_ERR err;
 
   if (controller_task_state != STATE_CONTROLLER_INIT) { // ensure S0A runs on first resume (on boot)
-      controller_task_state = STATE_ON_AND_WAIT; // ensure system starts  at in on state
+      controller_task_state = STATE_PROFILE_EST; // ensure system starts  at in on state IF completed first 3 turnarounds
       bottom_turn_around_complete = false;
 
   }
