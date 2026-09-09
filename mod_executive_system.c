@@ -82,16 +82,25 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_INIT_INFRA_TASKS: {
-            if (state_entry) {
-                printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
-                cli_app_init();
-                mod_sd_create_init_task();
-            }
-            if (mod_sd_init_done_AW()) {
-                system_state = SYS_CONFIG;
-            }
-            break;
-        }
+                    static uint32_t s1_wait_passes = 0;
+                    if (state_entry) {
+                        printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
+                        s1_wait_passes = 0;
+                        cli_app_init();
+                        mod_sd_create_init_task();
+                    }
+                    if (mod_sd_init_done_AW()) {
+                        system_state = SYS_CONFIG;
+                    }
+                    else {
+                        s1_wait_passes = s1_wait_passes + 1;
+                        if (s1_wait_passes >= 500) {
+                            printf("S1: stuck waiting on SD init\r\n");
+                            s1_wait_passes = 0;
+                       }
+                    }
+                    break;
+                }
 
         case SYS_CONFIG: {   // reads if there is a config file, if there is it over-rides default run time variables
           printf("S2: entered SYS_CONFIG\r\n");

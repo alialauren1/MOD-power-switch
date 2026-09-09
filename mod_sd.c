@@ -194,19 +194,22 @@ void mod_sd_init_task()
   mod_sd_enable_hardware_AW();
   mod_sd_seed_rtc_AW();
 
+  printf("SD: calling MICROSD_Init\r\n");
   MICROSD_Init();
 
+  printf("SD: calling f_mount\r\n");
 //  SEGGER_SYSVIEW_WarnfHost("mount");
   res = f_mount(&fat_fs,(TCHAR*)"", 1);
 
   if(res == (FRESULT)RES_OK)
   {
       printf("FATfs mount success\r\n");
+      printf("SD: calling mod_sd_open_AW\r\n");
       mod_sd_open_AW();
   }
   else
   {
-      printf("Unable to mount FAT fs.\r\n");
+      printf("Unable to mount FAT fs, res=%d\r\n",(int)res);
   }
 
 
