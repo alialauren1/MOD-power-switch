@@ -129,6 +129,7 @@ static void executive_task(void *p_arg) {
           if (state_entry) {
               printf("S5: entered SYS_SELF_CHECK\r\n");
               if (!keller_sensor_check()){
+                  printf("S5: pressure sensor not responding, going to SYS_ERR\r\n");
                   system_state=SYS_ERR;
                   break;
               }
