@@ -127,6 +127,9 @@ static void executive_task(void *p_arg) {
           get_sensor_data_task_create(); get_sensor_data_task_suspend_on_boot();
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
+
+          GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // configures pin
+
           controller_task_create(); controller_task_suspend();
           button_stop_acqu_task_create(); button_stop_acqu_task_suspend();
 
