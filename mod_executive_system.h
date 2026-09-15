@@ -72,4 +72,6 @@ int32_t             system_get_switch_off_depth_mbar(void);
 void system_set_switch_on_depth_mbar(int32_t depth_mbar);
 void system_set_switch_on_direction(switch_direction_t dir);
 
+bool system_get_logging_flag(void);
+
 #endif /* MOD_EXECUTIVE_SYSTEM_H_ */

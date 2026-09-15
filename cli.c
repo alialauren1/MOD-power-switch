@@ -120,7 +120,7 @@ static const sl_cli_command_info_t cmd__sd_read = \
 static const sl_cli_command_info_t cmd__sd_set_time = \
   SL_CLI_COMMAND(sd_set_time_cmd,
                  "set time for current sd card data run in the form of:",
-                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day" SL_CLI_UNIT_SEPARATOR "hour" SL_CLI_UNIT_SEPARATOR "min" SL_CLI_UNIT_SEPARATOR "sec",
+                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day(##)" SL_CLI_UNIT_SEPARATOR "hour(##)" SL_CLI_UNIT_SEPARATOR "min(##)" SL_CLI_UNIT_SEPARATOR "sec(##)",
                  { SL_CLI_ARG_UINT16, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_END, });
 
 static const sl_cli_command_info_t cmd__get_time = \
@@ -453,9 +453,8 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments)
  * The command is used to set the time.
  ******************************************************************************/
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments){
-  if (sl_cli_get_argument_count(arguments)<6){
-      printf("usage: set_time YYYY MM DD HH MM SS\r\n");
-      printf("ex:    set_time 2000 12 25 12 30 01\r\n");
+  if (!mod_sd_is_open_AW()){
+      printf("set_time not available: no data file open, run start_acqu with logging on first\r\n");
       return;
   }
   uint16_t year = sl_cli_get_argument_uint16(arguments, 0);
@@ -635,7 +634,7 @@ void cli_app_init(void)
   printf("  Started CLI Micrium OS\r\n");
 
   printf("  Instructions:\r\n");
-  printf("  1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("  1. Please wait for the following initialization messages: successful Fat FS mount, and sensor found\r\n");
   printf("  2. Use set_time to document time during data collection\r\n");
   printf("---------------------------------\r\n");
 }

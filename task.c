@@ -181,6 +181,8 @@ void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward de
 void button_stop_acqu_task(void *p_arg); // forward declaration
 void controller_task(void *p_arg); // forward declaration
 
+static volatile bool logger_in_sd_call = false; // flag for things outside logger task to know when mid_SD-transaction
+
 //----------------------------------ERR handling to executive S8: Worst Case Scenario Defaults to Payloads ON----------------------------------------
 
 typedef enum {
@@ -256,7 +258,12 @@ void config_expected_turnaround_task(int32_t expected_mbar) {last_bottom_turnaro
 
 void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
-void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void retrieve_task_suspend(void)        {
+  RTOS_ERR err;
+  while (logger_in_sd_call) { OSTimeDly(1, OS_OPT_TIME_DLY, &err); }
+  OSTaskSuspend(&retrieve_from_buf_tcb, &err);
+  EFM_ASSERT(err.Code == RTOS_ERR_NONE);
+}
 void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
 void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf2_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
@@ -424,20 +431,21 @@ void get_sensor_data_task(void *p_arg)
                                ctrl_out_midway = GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN);
                           }
                           if (avg_sample_counter == avg_sample_count) {
-                              if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
-                                                  temp_sum/(int32_t)avg_sample_count,
-                                                  t_ticks_mid,
-                                                  hall_midway,
-                                                  ctrl_out_midway)){ }
-                              else {
-                                  freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
-                                  t_sec_whole = t_ticks / freq;
-                                  t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
-                                  printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
-                                         (uint32_t)(t_sec_whole / 1000000),
-                                         (uint32_t)(t_sec_whole % 1000000),
-                                         (uint32_t)t_sec_frac);
-                                       }
+                              if (system_get_logging_flag()){
+                                  if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
+                                                               temp_sum/(int32_t)avg_sample_count,
+                                                               t_ticks_mid,
+                                                               hall_midway,
+                                                               ctrl_out_midway)){ }
+                                  else {
+                                       freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
+                                       t_sec_whole = t_ticks / freq;
+                                       t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
+                                       printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
+                                              (uint32_t)(t_sec_whole / 1000000),
+                                              (uint32_t)(t_sec_whole % 1000000),
+                                              (uint32_t)t_sec_frac); }
+                              }
 
                               // single read buffer
                               if (system_get_single_read_flag()){
@@ -548,21 +556,36 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
       // drain circular buffer and printf
       sensor_sample_t sample; // keller_buffer_Store holds the block averaged samples
 
+      if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG && !mod_sd_is_open_AW()){
+          logger_in_sd_call = true;
+          mod_sd_write_AW(NULL,0);        // open a file before taking any samples
+          logger_in_sd_call = false;
+
+          if (!mod_sd_is_open_AW()){
+              OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
+              continue;                   // still no file: leave samples in the buffer, try again next pass
+          }
+      }
+
       while (sensor_data_buffer_retrieve(&sample)) {
 
           uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
           uint64_t t_sec_whole = sample.t_ticks / freq;
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
-          if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){
+          if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){  // covers if a batch write fails part way through draining
               if (!mod_sd_is_open_AW()){
+                  logger_in_sd_call = true;
                   mod_sd_write_AW(NULL,0); // attempt recovery
+                  logger_in_sd_call = false;
                   break; // if SD card not open, exit loop
               }
 
               // turn around detection, inside the sd guard so a flip with no open file is dropped
                            if (prev_hall != -1 && sample.hall != prev_hall){
+                               logger_in_sd_call = true;
                                mod_sd_depth_turnaround_log_AW(sample.t_ticks, sample.p_mbar);
+                               logger_in_sd_call = false;
 
                                if (prev_hall == HALL_EFFECT_DESCENT_STATE && sample.hall == HALL_EFFECT_ASCENT_STATE){
                                    last_bottom_turnaround_depth_mbar = sample.p_mbar; // bottom turn around, deepest point of the profile
@@ -590,7 +613,9 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
               sd_bytes_merged += len; // bytes written to data_array_for_sd_card
 
               if (sd_buffer_sample_count >= SD_SAMPLES_PER_WRITE){
+                  logger_in_sd_call = true;
                   bool write_ok = mod_sd_write_AW(sd_write_buf,sd_buffer_sample_count*len);
+                  logger_in_sd_call = false;
                   if (!write_ok){
                       printf("Write failed for buffer \r\n");
                   }
@@ -690,7 +715,7 @@ void button_stop_acqu_task(void *p_arg) {
   RTOS_ERR err;
   uint8_t button_press_count = 0;
   while (1) {
-      if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
+      if (GPIO_PinInGet(gpioPortC, 8) == 0 && system_get_state() == SYS_ACQU) {
           if (++button_press_count >=5){ // 5 increments of the button poll check
               button_press_count =0;
               system_request_stop_acquisition();

@@ -60,6 +60,7 @@ static FIL cfg_fp;  // config file handle, static to avoid putting large FIL str
 static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant overlap
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
 static volatile bool sd_init_done = false;
+static volatile bool sd_mounted = false;
 static volatile uint8_t sd_write_prev = 0;
 static void mod_sd_open_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
@@ -201,17 +202,8 @@ void mod_sd_init_task()
 //  SEGGER_SYSVIEW_WarnfHost("mount");
   res = f_mount(&fat_fs,(TCHAR*)"", 1);
 
-  if(res == (FRESULT)RES_OK)
-  {
-      printf("FATfs mount success\r\n");
-      printf("SD: calling mod_sd_open_AW\r\n");
-      mod_sd_open_AW();
-  }
-  else
-  {
-      printf("Unable to mount FAT fs, res=%d\r\n",(int)res);
-  }
-
+  if(res == (FRESULT)RES_OK) { printf("FATfs mount success\r\n"); sd_mounted = true;} // set flag true
+  else { printf("Unable to mount FAT fs, res=%d\r\n",(int)res); }
 
 //  xTaskNotifyGive(mod_som_init_task_handle);
 
@@ -276,11 +268,20 @@ static void mod_sd_open_AW(void){
   while (lo < hi) {
       int mid = lo + (hi - lo) / 2;
       snprintf(name_buf, sizeof(name_buf), "data_%04d.csv", mid); // build filename string in RAM, %04d zero-pads the number
-      mod_sd_ff_encode(name_buf, file_name, strlen(name_buf)); // encode filename for FatFS: converting string into format for FatFS storing it in file_name
-      if (f_stat(file_name, &fno) == FR_NO_FILE) hi = mid; // file missing: first unused slot is at mid or below, shrink top of window
-      else lo = mid + 1;                                     // file exists: first unused slot is above mid, shrink bottom of window
+      mod_sd_ff_encode(name_buf, file_name, strlen(name_buf));    // encode filename for FatFS: converting string into format for FatFS storing it in file_name
+      FRESULT stat_res = f_stat(file_name, &fno);
+      if (stat_res == FR_NO_FILE) hi = mid;                       // file missing: first unused slot is at mid or below, shrink top of window
+      else if (stat_res ==FR_OK) { lo = mid + 1; }                // file exists: first unused slot is above mid, shrink bottom of window
+      else {                                                      // neither: card error, dont treat as file exists
+          printf("SD: file scan failed: %d\r\n",stat_res);
+          sd_mounted = false;
+          GPIO_PinOutSet(gpioPortH, 11);               // green off
+          GPIO_PinOutClear(gpioPortH, 10);             // red on
+          return;
+      }
   }
   file_num = lo;
+  printf("SD: scan done, file_num=%d\r\n", file_num);
 
   if(file_num>9999){
       printf("SD error:max file count has been reached \r\n");
@@ -298,13 +299,15 @@ static void mod_sd_open_AW(void){
   if(fres==FR_OK){
       GPIO_PinOutSet(gpioPortH, 10);    // clear red error LED on successful open
       GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
+      printf("SD: f_open ok, writing header\r\n");
       sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
       f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data and Controller Output\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data and Controller Output\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
-      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall, controller output\r\n") - 1, &bw);
+      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n", sizeof("Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n") - 1, &bw);
       printf("File created: %s \r\n", name_buf);
   }
   else {
       printf("File open has failed: %d\r\n",fres);
+      sd_mounted = false;             // next attempt does a full remount
       GPIO_PinOutSet(gpioPortH, 11);  // turn off led to GREEN — no longer accurate to claim "recording"
       GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
@@ -347,10 +350,12 @@ bool mod_sd_remount_and_open_AW(void){
   }
 
   sd_remount_fail_count=0;
+  sd_mounted = true;
 
   mod_sd_open_AW();
   if (!mod_sd_is_open_AW()) {
       printf("File open failed after remount.\r\n");
+      sd_mounted = false; //  open failed, next attempt should do a full remount
       return false;
   }
   return true;
@@ -358,6 +363,7 @@ bool mod_sd_remount_and_open_AW(void){
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
 bool mod_sd_init_done_AW(void) { return sd_init_done; }
+bool mod_sd_is_mounted_AW(void) { return sd_mounted; }
 
 void mod_sd_close_and_unmount_AW(void) {
     RTOS_ERR err;
@@ -374,6 +380,7 @@ void mod_sd_close_and_unmount_AW(void) {
     OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // release the lock
 
     f_mount(NULL, (TCHAR*)"", 0); // always unmount regardless of if file was open or not
+    sd_mounted = false;
 
     GPIO_PinOutSet(gpioPortH, 11); // turn off LED
     GPIO_PinOutSet(gpioPortH, 15); // turn off LED
@@ -382,7 +389,7 @@ void mod_sd_close_and_unmount_AW(void) {
         printf("SD card safe to remove.\r\n");
     }
     else {
-        printf("SD card file was not open (closed earlier due to an error), card was still unmounted.\r\n");
+        printf("SD card file was not open, card was still unmounted.\r\n");
     }
 }
 
@@ -393,7 +400,8 @@ bool mod_sd_write_AW(char *buf, int len){
   OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire sd_mutex lock before touching fp, protecting fp so write and close cant overlap
 
   if (!sd_file_open) {
-       mod_sd_remount_and_open_AW();
+      if (sd_mounted){ mod_sd_open_AW(); } // card already mounted, just create file
+      else { mod_sd_remount_and_open_AW(); }
    }
 
    if (buf == NULL) {
@@ -404,10 +412,20 @@ bool mod_sd_write_AW(char *buf, int len){
   if(sd_file_open){
 
       if ((int)f_size(&fp) + len >= SD_FILE_MAX_SIZE) {
+          printf("File size limit reached\r\n");
           f_close(&fp);
           sd_file_open = 0;
           mod_sd_open_AW(); // find next file name and open it
-          printf("File size limit reached, opened: %s\r\n", name_buf);
+
+          if (!sd_file_open){
+                mod_sd_remount_and_open_AW();
+                if (!sd_file_open){ // if it fails after trying a remount
+                    OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);
+                    printf("New file opening failed\r\n");
+                    return false; // remount did not open a file either
+                }
+          }
+          printf("Reopened new file\r\n");
       }
 
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid

@@ -27,6 +27,7 @@ static volatile bool single_read_sensor_flag = false;
 system_state_t system_get_state(void)         { return system_state; }
 running_mode_t system_get_running_mode(void)  {return running_mode;}
 bool system_get_single_read_flag(void)        {return single_read_sensor_flag; }
+bool system_get_logging_flag(void)            {return run_time_vars.logging_on_flg; }
 
 switch_direction_t system_get_switch_on_direction(void)   { return run_time_vars.switch_on_direction; }
 int32_t             system_get_switch_on_depth_mbar(void)  { return run_time_vars.switch_on_depth_mbar; }
@@ -104,7 +105,7 @@ static void executive_task(void *p_arg) {
 
         case SYS_CONFIG: {   // reads if there is a config file, if there is it over-rides default run time variables
           printf("S2: entered SYS_CONFIG\r\n");
-          if (mod_sd_is_open_AW()) {
+          if (mod_sd_is_mounted_AW()) {
               mod_sd_load_config_AW(&run_time_vars);
               config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to default
               config_expected_turnaround_task(run_time_vars.expected_bottom_turnaround_depth_mbar);
@@ -177,9 +178,6 @@ static void executive_task(void *p_arg) {
               }
               else {
                   if (run_time_vars.logging_on_flg){
-                      if (!mod_sd_is_open_AW()){
-                          mod_sd_remount_and_open_AW();
-                      }
                       retrieve_task_resume();           // pull from circular buf and store on sd card
                   }
                   if (run_time_vars.controller_on_flg){
@@ -215,7 +213,6 @@ static void executive_task(void *p_arg) {
           if (running_mode == RUNNING_MODE_IDLE && !single_read_sensor_flag){
 
               if (!single_read_sensor_flag_copy){
-                  if (run_time_vars.logging_on_flg) { retrieve_task_suspend(); }
                   if (run_time_vars.controller_on_flg) {
                       controller_task_suspend();
                   }
@@ -226,6 +223,7 @@ static void executive_task(void *p_arg) {
                       button_stop_acqu_task_suspend();
                       button_task_is_running = false;
                   }
+                  if (run_time_vars.logging_on_flg) { retrieve_task_suspend(); } // waits on an SD call before calling suspension
                   flush_sd_before_close();
                   mod_sd_close_and_unmount_AW();
               }
