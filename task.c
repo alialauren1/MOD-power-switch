@@ -68,6 +68,10 @@ static volatile int      prev_hall = -1; // not either of the hall outcomes to p
 static volatile int32_t  last_bottom_turnaround_depth_mbar = EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT;
 static int32_t           switch_on_lag_mbar = 0; // derived once in STATE_CONTROLLER_INIT
 
+static int      ctrl_prev_hall = -1;  // controller's own flip detector, independent of the logger task
+static uint32_t ctrl_bottom_turnaround_counter = 0;
+static int32_t  ctrl_last_bottom_turnaround_depth_mbar = EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT;
+
 #define HALL_EFFECT_PORT  gpioPortA   // port hall effect signal is attached to
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
 #define HALL_EFFECT_IDLE_STATE 1 // 1 = naturally HIGH (active-low output), 0 = naturally LOW (active high output)
@@ -254,7 +258,10 @@ static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
 static controller_state_t controller_task_state = STATE_CONTROLLER_INIT;
 static volatile bool bottom_turn_around_complete = 0; // set to false
 
-void config_expected_turnaround_task(int32_t expected_mbar) {last_bottom_turnaround_depth_mbar = expected_mbar;}
+void config_expected_turnaround_task(int32_t expected_mbar) {
+  last_bottom_turnaround_depth_mbar = expected_mbar;
+  ctrl_last_bottom_turnaround_depth_mbar = expected_mbar;
+}
 
 void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
@@ -282,8 +289,10 @@ void get_sensor_data_task_suspend(void) {
 void controller_task_resume(void)  {
   RTOS_ERR err;
 
+  ctrl_prev_hall = -1; // a gap in sampling cant read as a flip on the next sample
+
   if (controller_task_state != STATE_CONTROLLER_INIT) { // ensure S0A runs on first resume (on boot)
-      controller_task_state = STATE_PROFILE_EST; // ensure system starts  at in on state IF completed first 3 turnarounds
+      controller_task_state = STATE_PROFILE_EST; // checks S0 and falls through to State ON&WAIT if complete
       bottom_turn_around_complete = false;
 
   }
@@ -787,6 +796,17 @@ void controller_task(void *p_arg) {
                  (int)(abs(latest_p_mbar) % 1000),
                  latest_hall,
                  GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN));
+
+          // controller's own bottom turn around detection, independent of the logger task
+          if (ctrl_prev_hall != -1 && latest_hall != ctrl_prev_hall){
+              if (ctrl_prev_hall == HALL_EFFECT_DESCENT_STATE && latest_hall == HALL_EFFECT_ASCENT_STATE){
+                  ctrl_last_bottom_turnaround_depth_mbar = latest_p_mbar;
+                  ctrl_bottom_turnaround_counter++;
+                  printf("CTRL: bottom turn around %lu at %ld mbar\r\n",
+                  ctrl_bottom_turnaround_counter, (long)ctrl_last_bottom_turnaround_depth_mbar);
+              }
+          }
+                    ctrl_prev_hall = latest_hall;
       }
 
       switch (controller_task_state) {
@@ -820,7 +840,7 @@ void controller_task(void *p_arg) {
 
         case STATE_PROFILE_EST: {
           printf("CTRL S0\r\n");
-          if (depth_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
+          if (ctrl_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
 
               controller_task_state= STATE_ON_AND_WAIT;
           }
@@ -880,11 +900,11 @@ void controller_task(void *p_arg) {
 
       OSTimeDly(100, OS_OPT_TIME_DLY, &err);
 
-      // continuous adaptation: re-correct every time the logger records a new bottom turn around
-      if (depth_bottom_turnaround_counter != prev_counter) {
-          prev_counter = depth_bottom_turnaround_counter; // fire when new measurement of depth turnaround
+      // continuous adaptation: re-correct every time the ctrller records a new bottom turn around
+      if (ctrl_bottom_turnaround_counter != prev_counter) {
+          prev_counter = ctrl_bottom_turnaround_counter; // fire when new measurement of depth turnaround
 
-          int32_t measured_depth  = last_bottom_turnaround_depth_mbar; // single read, the logger task writes this
+          int32_t measured_depth  = ctrl_last_bottom_turnaround_depth_mbar; // single read, the logger task writes this
           int32_t corrected_switch_on_depth = measured_depth - switch_on_lag_mbar;
           if (corrected_switch_on_depth <= 0){
               printf("measured turn around %ld mbar implausible, keeping switch_on_depth at %ld mbar\r\n",
