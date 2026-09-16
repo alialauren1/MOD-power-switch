@@ -62,6 +62,15 @@ static uint32_t avg_sample_count = AVG_SAMPLE_COUNT_DEFAULT;  // default, recalc
 static int32_t  pressure_sum     = 0;
 static int32_t  temp_sum         = 0;
 static uint32_t avg_sample_counter = 0;
+static volatile uint32_t depth_bottom_turnaround_counter = 0;
+
+static volatile int      prev_hall = -1; // not either of the hall outcomes to prevent false trigger on init
+static volatile int32_t  last_bottom_turnaround_depth_mbar = EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT;
+static int32_t           switch_on_lag_mbar = 0; // derived once in STATE_CONTROLLER_INIT
+
+static int      ctrl_prev_hall = -1;  // controller's own flip detector, independent of the logger task
+static uint32_t ctrl_bottom_turnaround_counter = 0;
+static int32_t  ctrl_last_bottom_turnaround_depth_mbar = EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT;
 
 #define HALL_EFFECT_PORT  gpioPortA   // port hall effect signal is attached to
 #define HALL_EFFECT_PIN   12           // pin hall effect signal is attached to
@@ -69,9 +78,6 @@ static uint32_t avg_sample_counter = 0;
 
 #define HALL_EFFECT_DESCENT_STATE 0 // when magnet is aligned, output it low, system on descent
 #define HALL_EFFECT_ASCENT_STATE (!HALL_EFFECT_DESCENT_STATE)
-
-#define CONTROLLER_OUTPUT_PORT  gpioPortA
-#define CONTROLLER_OUTPUT_PIN   13 // active-low "cut power" line: HIGH (default) = instrument ON (fail-safe), LOW = instrument OFF
 
 typedef enum {
     STATE_WRITE,
@@ -105,6 +111,7 @@ static CPU_STK controller_stk[CONTROLLER_TASK_STK_SIZE];
 static OS_TCB  controller_tcb;
 
 typedef enum {
+    STATE_CONTROLLER_INIT,
     STATE_PROFILE_EST,
     STATE_ON_AND_WAIT,
     STATE_TURN_OFF,
@@ -178,12 +185,42 @@ void retrieve_data_from_buffer2_and_single_read_task(void *p_arg); // forward de
 void button_stop_acqu_task(void *p_arg); // forward declaration
 void controller_task(void *p_arg); // forward declaration
 
+static volatile bool logger_in_sd_call = false; // flag for things outside logger task to know when mid_SD-transaction
+
+//----------------------------------ERR handling to executive S8: Worst Case Scenario Defaults to Payloads ON----------------------------------------
+
+typedef enum {
+    P_SENSOR_ERR_I2C_RETRY,     // 0: startup retry loop
+    P_SENSOR_ERR_TRIGGER,       // 1: I2C trigger write failed
+    P_SENSOR_ERR_READ,          // 2: I2C read failed
+    P_SENSOR_ERR_MEM,           // 3: sensor checksum failed
+    P_SENSOR_ERR_COUNT          // 4: not an error, the array size
+} p_sensor_err_t;
+
+static volatile uint32_t p_sensor_err_cnt[P_SENSOR_ERR_COUNT]={0};            // start count off at 0
+static const uint32_t p_sensor_err_limit[P_SENSOR_ERR_COUNT]={10,500,500,2};  // 1:3 based on how often each error occurs in a loop, 4 is based on mem checksum failing
+static volatile bool p_sensor_err_flag = false;                               // flag will cause system to stick itself in S8 of executive task (default payloads on, stop acqu)
+
+static void p_sensor_err_record(p_sensor_err_t n){                            // copies index error into n to tell which error has occured
+  if (++p_sensor_err_cnt[n]>=p_sensor_err_limit[n]) {
+      printf("P SENSOR FAILED: error %d , count: %lu\r\n",(int)n, p_sensor_err_cnt[n]);
+      p_sensor_err_flag = true;                                               // for executive to see
+  }
+}
+
+static void p_sensor_err_reset_counts(void){                                  // clears error counters
+  for (int i=0; i<P_SENSOR_ERR_COUNT;i++){ p_sensor_err_cnt[i]=0; }
+}
+
+bool p_sensor_failed(void) {return p_sensor_err_flag;}                        // executive in other file needs to see this flag
+
 //----------------------------------Sub Tasks--------------------------------------------------------------
 
-void reset_block_avg_data_accumulators(void){
+void clear_acqu_data_accumulators(void){
   pressure_sum       = 0;
   temp_sum           = 0;
   avg_sample_counter = 0;
+  prev_hall = -1; //reset so the first sample of next start_Acqu doesnt get misinterpretted
   sensor_sample_t discard;
   while (sensor_data_buffer_retrieve(&discard)) {}
 }
@@ -204,22 +241,63 @@ unsigned int get_sample_rate_hz(void){
 }
 
 void config_sample_rate_task(unsigned int rate_hz) {
-    if (rate_hz < 1 || rate_hz > 100) rate_hz = SAMPLE_RATE_HZ_DEFAULT;
-    sample_rate_hz     = rate_hz;
-    avg_sample_count   = (1000 / sample_rate_hz) / TOTAL_INTERVAL_MS;
+    if (rate_hz < 1 || rate_hz > 100) {
+        rate_hz = SAMPLE_RATE_HZ_DEFAULT;
+        printf("Sample rate out of range, Substituting default\r\n");
+    }
+    avg_sample_count   = (1000 / rate_hz) / TOTAL_INTERVAL_MS;
+    if (avg_sample_count < 1) avg_sample_count =1;
+
+    sample_rate_hz = 1000/(avg_sample_count*TOTAL_INTERVAL_MS);
+    if (sample_rate_hz!= rate_hz){
+        printf("Sample rate %u Hz not achievable, rounded up to %lu Hz\r\n", rate_hz, sample_rate_hz);
+    }
 }
 
+static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
+static controller_state_t controller_task_state = STATE_CONTROLLER_INIT;
+static volatile bool bottom_turn_around_complete = 0; // set to false
+
+void config_expected_turnaround_task(int32_t expected_mbar) {
+  last_bottom_turnaround_depth_mbar = expected_mbar;
+  ctrl_last_bottom_turnaround_depth_mbar = expected_mbar;
+}
 
 void get_sensor_data_task_suspend_on_boot(void) { RTOS_ERR err; OSTaskSuspend(&sensor_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void get_sensor_data_task_resume(void)  { RTOS_ERR err; OSTaskResume(&sensor_tcb, &err); }
-void retrieve_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+void retrieve_task_suspend(void)        {
+  RTOS_ERR err;
+  while (logger_in_sd_call) { OSTimeDly(1, OS_OPT_TIME_DLY, &err); }
+  OSTaskSuspend(&retrieve_from_buf_tcb, &err);
+  EFM_ASSERT(err.Code == RTOS_ERR_NONE);
+}
 void retrieve_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf_tcb, &err); }
 void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retrieve_from_buf2_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
 void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_acqu_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
 void controller_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&controller_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
-void controller_task_resume(void)  { RTOS_ERR err; OSTaskResume(&controller_tcb, &err); }
+
+void get_sensor_data_task_suspend(void) {
+    RTOS_ERR err;
+    while (sensor_task_state != STATE_DELAY && !p_sensor_err_flag) { // don't suspend until in DELAY or critical err flag has been risen
+        OSTimeDly(1, OS_OPT_TIME_DLY, &err);
+    }
+    OSTaskSuspend(&sensor_tcb, &err);
+}
+
+void controller_task_resume(void)  {
+  RTOS_ERR err;
+
+  ctrl_prev_hall = -1; // a gap in sampling cant read as a flip on the next sample
+
+  if (controller_task_state != STATE_CONTROLLER_INIT) { // ensure S0A runs on first resume (on boot)
+      controller_task_state = STATE_PROFILE_EST; // checks S0 and falls through to State ON&WAIT if complete
+      bottom_turn_around_complete = false;
+
+  }
+
+  OSTaskResume(&controller_tcb, &err); }
 
 static bool sensor_state_reset_on_resume = false;
 void sensor_request_state_reset(void) { sensor_state_reset_on_resume = true; }
@@ -228,17 +306,6 @@ bool keller_sensor_check(void) { return keller_p_sensor_init(); }
 
 static bool controller_print_config_on_resume = false; // flag for telling when we reenter controller task so we can print config
 void controller_request_print_config(void) { controller_print_config_on_resume = true; }
-
-static sensor_state_t sensor_task_state = STATE_WRITE; // start on this state
-static controller_state_t controller_task_state = STATE_PROFILE_EST;
-
-void get_sensor_data_task_suspend(void) {
-    RTOS_ERR err;
-    while (sensor_task_state != STATE_DELAY) {
-        OSTimeDly(1, OS_OPT_TIME_DLY, &err);
-    }
-    OSTaskSuspend(&sensor_tcb, &err);
-}
 
 //-----------------------------Acquisition Tasks-----------------------------------------------------
 
@@ -271,7 +338,8 @@ void get_sensor_data_task(void *p_arg)
   while(!keller_p_sensor_ok){
       keller_p_sensor_ok = keller_p_sensor_init();
       if(!keller_p_sensor_ok){
-          printf("ERROR: No I2C ACK, retrying...\r\n");
+          printf("ERROR: I2C transfer, retrying...\r\n");
+          p_sensor_err_record(P_SENSOR_ERR_I2C_RETRY);
           OSTimeDlyHMSM(0, 0, 0, 500, OS_OPT_TIME_HMSM_STRICT, &delay_err);
       }
   }
@@ -328,6 +396,7 @@ void get_sensor_data_task(void *p_arg)
               }
               else if (!trigger_ok) {
                   printf("ERROR: trigger write failed\r\n");
+                  p_sensor_err_record(P_SENSOR_ERR_TRIGGER);
                   sensor_task_state = STATE_DELAY;
               }
               else {
@@ -353,8 +422,11 @@ void get_sensor_data_task(void *p_arg)
                       }
                       else if (status & STATUS_MEM_ERR_BIT) {
                           printf("ERROR: Sensor memory error\r\n");
+                          p_sensor_err_record(P_SENSOR_ERR_MEM);
                       }
                       else {
+                          p_sensor_err_reset_counts(); // reset err counts
+
                           pressure = (uint16_t)((raw[1] << 8) | raw[2]);
                           temp_raw = (uint16_t)((raw[3] << 8) | raw[4]);
                           p_mbar  = (int32_t)(((int64_t)pressure - 16384) * 100000 / 32768);
@@ -368,20 +440,21 @@ void get_sensor_data_task(void *p_arg)
                                ctrl_out_midway = GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN);
                           }
                           if (avg_sample_counter == avg_sample_count) {
-                              if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
-                                                  temp_sum/(int32_t)avg_sample_count,
-                                                  t_ticks_mid,
-                                                  hall_midway,
-                                                  ctrl_out_midway)){ }
-                              else {
-                                  freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
-                                  t_sec_whole = t_ticks / freq;
-                                  t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
-                                  printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
-                                         (uint32_t)(t_sec_whole / 1000000),
-                                         (uint32_t)(t_sec_whole % 1000000),
-                                         (uint32_t)t_sec_frac);
-                                       }
+                              if (system_get_logging_flag()){
+                                  if (sensor_data_buffer_store(pressure_sum/(int32_t)avg_sample_count,
+                                                               temp_sum/(int32_t)avg_sample_count,
+                                                               t_ticks_mid,
+                                                               hall_midway,
+                                                               ctrl_out_midway)){ }
+                                  else {
+                                       freq = sl_sleeptimer_get_timer_frequency();           // 32768 on EFM32GG11
+                                       t_sec_whole = t_ticks / freq;
+                                       t_sec_frac  = ((uint64_t)(t_ticks % freq) * 1000000) / freq;
+                                       printf("WARNING: buffer full, sample dropped @ %02lu%06lu.%06lu\r\n",
+                                              (uint32_t)(t_sec_whole / 1000000),
+                                              (uint32_t)(t_sec_whole % 1000000),
+                                              (uint32_t)t_sec_frac); }
+                              }
 
                               // single read buffer
                               if (system_get_single_read_flag()){
@@ -431,6 +504,7 @@ void get_sensor_data_task(void *p_arg)
               }
               else if (!read_ok) {
                   printf("ERROR: I2C read failed\r\n");
+                  p_sensor_err_record(P_SENSOR_ERR_READ);
                   sensor_task_state = STATE_DELAY;
               }
               else {
@@ -491,16 +565,43 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
       // drain circular buffer and printf
       sensor_sample_t sample; // keller_buffer_Store holds the block averaged samples
 
+      if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG && !mod_sd_is_open_AW()){
+          logger_in_sd_call = true;
+          mod_sd_write_AW(NULL,0);        // open a file before taking any samples
+          logger_in_sd_call = false;
+
+          if (!mod_sd_is_open_AW()){
+              OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
+              continue;                   // still no file: leave samples in the buffer, try again next pass
+          }
+      }
+
       while (sensor_data_buffer_retrieve(&sample)) {
 
           uint32_t freq = sl_sleeptimer_get_timer_frequency();                                // 32768 on EFM32GG11
           uint64_t t_sec_whole = sample.t_ticks / freq;
           uint64_t t_sec_frac  = ((sample.t_ticks % freq) * 1000000) / freq;
 
-          if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){
+          if (system_get_running_mode()==RUNNING_MODE_AUTO_CONTROL_AND_LOG){  // covers if a batch write fails part way through draining
               if (!mod_sd_is_open_AW()){
+                  logger_in_sd_call = true;
+                  mod_sd_write_AW(NULL,0); // attempt recovery
+                  logger_in_sd_call = false;
                   break; // if SD card not open, exit loop
               }
+
+              // turn around detection, inside the sd guard so a flip with no open file is dropped
+                           if (prev_hall != -1 && sample.hall != prev_hall){
+                               logger_in_sd_call = true;
+                               mod_sd_depth_turnaround_log_AW(sample.t_ticks, sample.p_mbar);
+                               logger_in_sd_call = false;
+
+                               if (prev_hall == HALL_EFFECT_DESCENT_STATE && sample.hall == HALL_EFFECT_ASCENT_STATE){
+                                   last_bottom_turnaround_depth_mbar = sample.p_mbar; // bottom turn around, deepest point of the profile
+                                   depth_bottom_turnaround_counter++;
+                                   printf("depth bottom turn around counter %lu\r\n", depth_bottom_turnaround_counter);
+                               }
+                           }
 
               int len = snprintf(data_array_for_sd_card, sizeof(data_array_for_sd_card),
                                            "%c%03d.%03d,%03d.%02d,%02lu%06lu.%06lu,%d,%d\r\n",
@@ -521,7 +622,9 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
               sd_bytes_merged += len; // bytes written to data_array_for_sd_card
 
               if (sd_buffer_sample_count >= SD_SAMPLES_PER_WRITE){
+                  logger_in_sd_call = true;
                   bool write_ok = mod_sd_write_AW(sd_write_buf,sd_buffer_sample_count*len);
+                  logger_in_sd_call = false;
                   if (!write_ok){
                       printf("Write failed for buffer \r\n");
                   }
@@ -530,6 +633,7 @@ void retrieve_data_from_buffer_and_sd_store_task(void *p_arg) {
               }
           }
 
+          prev_hall = sample.hall;
       }
 
       OSTimeDly(TOTAL_INTERVAL_MS/2, OS_OPT_TIME_DLY, &err);
@@ -620,7 +724,7 @@ void button_stop_acqu_task(void *p_arg) {
   RTOS_ERR err;
   uint8_t button_press_count = 0;
   while (1) {
-      if (GPIO_PinInGet(gpioPortC, 8) == 0 && mod_sd_is_open_AW()) {
+      if (GPIO_PinInGet(gpioPortC, 8) == 0 && system_get_state() == SYS_ACQU) {
           if (++button_press_count >=5){ // 5 increments of the button poll check
               button_press_count =0;
               system_request_stop_acquisition();
@@ -669,7 +773,7 @@ void controller_task(void *p_arg) {
   sensor_sample_t sample3;
   int32_t latest_p_mbar = 0;
   int latest_hall = 0;
-  bool bottom_turn_around_complete = 0;
+  uint32_t prev_counter = 0;
 
   while (1) {
 
@@ -692,14 +796,57 @@ void controller_task(void *p_arg) {
                  (int)(abs(latest_p_mbar) % 1000),
                  latest_hall,
                  GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN));
+
+          // controller's own bottom turn around detection, independent of the logger task
+          if (ctrl_prev_hall != -1 && latest_hall != ctrl_prev_hall){
+              if (ctrl_prev_hall == HALL_EFFECT_DESCENT_STATE && latest_hall == HALL_EFFECT_ASCENT_STATE){
+                  ctrl_last_bottom_turnaround_depth_mbar = latest_p_mbar;
+                  ctrl_bottom_turnaround_counter++;
+                  printf("CTRL: bottom turn around %lu at %ld mbar\r\n",
+                  ctrl_bottom_turnaround_counter, (long)ctrl_last_bottom_turnaround_depth_mbar);
+              }
+          }
+                    ctrl_prev_hall = latest_hall;
       }
 
       switch (controller_task_state) {
-        case STATE_PROFILE_EST: {
-          printf("CTRL S0\r\n");
-          controller_task_state= STATE_ON_AND_WAIT;
+        case STATE_CONTROLLER_INIT: {
+          printf("CTRL S0A\r\n");
+
+          if (system_get_switch_on_direction()==SWITCH_DIRECTION_DOWNCAST){
+              switch_on_lag_mbar = system_get_expected_bottom_turnaround_depth_mbar()
+                                 - system_get_switch_on_depth_mbar();
+              if (switch_on_lag_mbar < 0){
+                  printf("CTRL S0A: switch_on_depth (%ld) deeper than expected turn around (%ld), lag set to 0\r\n",
+                         (long)system_get_switch_on_depth_mbar(),
+                         (long)system_get_expected_bottom_turnaround_depth_mbar());
+                  switch_on_lag_mbar = 0;
+              }
+              else if (switch_on_lag_mbar > system_get_expected_bottom_turnaround_depth_mbar()) {
+                  printf("CTRL S0A: switch_on_depth (%ld) is above the surface, cannot ever trigger. Falling back to BOTH, instrument stays ON\r\n",
+                                           (long)system_get_switch_on_depth_mbar());
+                  system_set_switch_on_direction(SWITCH_DIRECTION_BOTH);
+                  switch_on_lag_mbar = 0;   // meaningless once direction is BOTH
+              }
+          }
+          else {
+              switch_on_lag_mbar = 0; // TODO: UPCAST needs an expected TOP turn around, BOTH never triggers
+          }
+          printf("CTRL S0A: lag = %ld mbar\r\n", (long)switch_on_lag_mbar);
+
+          controller_task_state = STATE_PROFILE_EST;
           break;
         }
+
+        case STATE_PROFILE_EST: {
+          printf("CTRL S0\r\n");
+          if (ctrl_bottom_turnaround_counter >=3 ){ // stay in profile estimation state until we've done a few full profiles
+
+              controller_task_state= STATE_ON_AND_WAIT;
+          }
+          break;
+        }
+
         case STATE_ON_AND_WAIT: {
           printf("CTRL S1\r\n");
 
@@ -751,6 +898,24 @@ void controller_task(void *p_arg) {
         }
       }
 
-      OSTimeDly(1000, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(100, OS_OPT_TIME_DLY, &err);
+
+      // continuous adaptation: re-correct every time the ctrller records a new bottom turn around
+      if (ctrl_bottom_turnaround_counter != prev_counter) {
+          prev_counter = ctrl_bottom_turnaround_counter; // fire when new measurement of depth turnaround
+
+          int32_t measured_depth  = ctrl_last_bottom_turnaround_depth_mbar; // single read, the logger task writes this
+          int32_t corrected_switch_on_depth = measured_depth - switch_on_lag_mbar;
+          if (corrected_switch_on_depth <= 0){
+              printf("measured turn around %ld mbar implausible, keeping switch_on_depth at %ld mbar\r\n",
+                     (long)measured_depth, (long)system_get_switch_on_depth_mbar());
+          }
+          else {
+              system_set_switch_on_depth_mbar(corrected_switch_on_depth);
+              printf("measured %ld mbar, lag %ld mbar, switch_on_depth corrected to %ld mbar\r\n",
+                     (long)measured_depth, (long)switch_on_lag_mbar, (long)corrected_switch_on_depth);
+          }
+      }
+
   }
 }

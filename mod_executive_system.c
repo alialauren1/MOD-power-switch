@@ -27,13 +27,17 @@ static volatile bool single_read_sensor_flag = false;
 system_state_t system_get_state(void)         { return system_state; }
 running_mode_t system_get_running_mode(void)  {return running_mode;}
 bool system_get_single_read_flag(void)        {return single_read_sensor_flag; }
+bool system_get_logging_flag(void)            {return run_time_vars.logging_on_flg; }
 
 switch_direction_t system_get_switch_on_direction(void)   { return run_time_vars.switch_on_direction; }
 int32_t             system_get_switch_on_depth_mbar(void)  { return run_time_vars.switch_on_depth_mbar; }
 switch_direction_t system_get_switch_off_direction(void)  { return run_time_vars.switch_off_direction; }
 int32_t             system_get_switch_off_depth_mbar(void) { return run_time_vars.switch_off_depth_mbar; }
 
+int32_t  system_get_expected_bottom_turnaround_depth_mbar(void) { return run_time_vars.expected_bottom_turnaround_depth_mbar; }
+
 void system_set_switch_on_depth_mbar(int32_t depth_mbar) { run_time_vars.switch_on_depth_mbar = depth_mbar; }
+void system_set_switch_on_direction(switch_direction_t dir) { run_time_vars.switch_on_direction = dir; }
 
 void system_request_start_acquisition(void)    { running_mode = RUNNING_MODE_AUTO_CONTROL_AND_LOG; }
 void system_request_stop_acquisition(void)     { running_mode = RUNNING_MODE_IDLE; }
@@ -71,6 +75,7 @@ static void executive_task(void *p_arg) {
           run_time_vars.switch_off_depth_mbar = 200; // milli-bar, near-surface reset
           run_time_vars.switch_on_direction = SWITCH_DIRECTION_DOWNCAST;
           run_time_vars.switch_on_depth_mbar = 550; // milli-bar, near-bottom pre-trigger
+          run_time_vars.expected_bottom_turnaround_depth_mbar = EXPECTED_BOTTOM_TURNAROUND_DEPTH_MBAR_DEFAULT;
           single_read_sensor_flag = false;
 
           system_state = SYS_INIT_INFRA_TASKS;
@@ -78,22 +83,32 @@ static void executive_task(void *p_arg) {
         }
 
         case SYS_INIT_INFRA_TASKS: {
-            if (state_entry) {
-                printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
-                cli_app_init();
-                mod_sd_create_init_task();
-            }
-            if (mod_sd_init_done_AW()) {
-                system_state = SYS_CONFIG;
-            }
-            break;
-        }
+                    static uint32_t s1_wait_passes = 0;
+                    if (state_entry) {
+                        printf("S1: entered SYS_INIT_INFRA_TASKS\r\n");
+                        s1_wait_passes = 0;
+                        cli_app_init();
+                        mod_sd_create_init_task();
+                    }
+                    if (mod_sd_init_done_AW()) {
+                        system_state = SYS_CONFIG;
+                    }
+                    else {
+                        s1_wait_passes = s1_wait_passes + 1;
+                        if (s1_wait_passes >= 500) {
+                            printf("S1: stuck waiting on SD init\r\n");
+                            s1_wait_passes = 0;
+                       }
+                    }
+                    break;
+                }
 
         case SYS_CONFIG: {   // reads if there is a config file, if there is it over-rides default run time variables
           printf("S2: entered SYS_CONFIG\r\n");
-          if (mod_sd_is_open_AW()) {
+          if (mod_sd_is_mounted_AW()) {
               mod_sd_load_config_AW(&run_time_vars);
               config_sample_rate_task(run_time_vars.sample_rate_hz); // checks if config sample rate is outside of bounds, if so resets to default
+              config_expected_turnaround_task(run_time_vars.expected_bottom_turnaround_depth_mbar);
           } else {
               printf("S2: SD not available, using defaults\r\n");
           }
@@ -113,6 +128,9 @@ static void executive_task(void *p_arg) {
           get_sensor_data_task_create(); get_sensor_data_task_suspend_on_boot();
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
+
+          GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // configures pin
+
           controller_task_create(); controller_task_suspend();
           button_stop_acqu_task_create(); button_stop_acqu_task_suspend();
 
@@ -124,6 +142,7 @@ static void executive_task(void *p_arg) {
           if (state_entry) {
               printf("S5: entered SYS_SELF_CHECK\r\n");
               if (!keller_sensor_check()){
+                  printf("S5: pressure sensor not responding, going to SYS_ERR\r\n");
                   system_state=SYS_ERR;
                   break;
               }
@@ -159,9 +178,6 @@ static void executive_task(void *p_arg) {
               }
               else {
                   if (run_time_vars.logging_on_flg){
-                      if (!mod_sd_is_open_AW()){
-                          mod_sd_remount_and_open_AW();
-                      }
                       retrieve_task_resume();           // pull from circular buf and store on sd card
                   }
                   if (run_time_vars.controller_on_flg){
@@ -181,36 +197,47 @@ static void executive_task(void *p_arg) {
                   buf2_task_is_running = true;
               }
           }
-
-          if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG && !single_read_sensor_flag){ // single read while in ACQU state, resume buf2 task to print value
+          if (running_mode == RUNNING_MODE_AUTO_CONTROL_AND_LOG && !single_read_sensor_flag){ // no single read bending, suspend buf2 if still running
               if (buf2_task_is_running == true) {
                   retrieve_buf2_task_suspend();
                   buf2_task_is_running=false;
               }
           }
 
+          if (p_sensor_failed()){
+              system_request_stop_acquisition(); // if critical sensor error occurs, call to stop acquisition
+              system_clear_single_read_flag();   // don't allow broken sensor to address pending single read
+          }
 
           // Exiting: only running_mode = idle and no pending single read
           if (running_mode == RUNNING_MODE_IDLE && !single_read_sensor_flag){
 
               if (!single_read_sensor_flag_copy){
-                  if (run_time_vars.logging_on_flg) { retrieve_task_suspend(); }
                   if (run_time_vars.controller_on_flg) {
                       controller_task_suspend();
+                  }
+                  if (!GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN)) {   // TODO: make this a function can handle software & hardware power switch checking
+                      GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure payloads have power to them, TODO: this may evolve to a software switch
                   }
                   if (button_task_is_running){
                       button_stop_acqu_task_suspend();
                       button_task_is_running = false;
                   }
+                  if (run_time_vars.logging_on_flg) { retrieve_task_suspend(); } // waits on an SD call before calling suspension
                   flush_sd_before_close();
                   mod_sd_close_and_unmount_AW();
               }
 
               get_sensor_data_task_suspend();
-              reset_block_avg_data_accumulators();
+              clear_acqu_data_accumulators();
               if (buf2_task_is_running) {retrieve_buf2_task_suspend(); buf2_task_is_running=false;}
 
-              system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // shared by both paths
+              if (p_sensor_failed()){
+                  system_state = SYS_ERR; // critical sensor error, go to SYS ERR to default payloads ON
+              }
+              else {
+                  system_state = SYS_RUNNING_MODE_CHECK_AND_IDLE; // regular requested stop
+              }
           }
 
           break;
@@ -218,7 +245,17 @@ static void executive_task(void *p_arg) {
 
 
         case SYS_ERR: {
-          if (state_entry) {printf("S8: entered SYS_ERR\r\n");}
+          if (state_entry) {
+              printf("S8: entered SYS_ERR\r\n");
+              GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure pin is driven
+              GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
+              printf("set power ON if wasn't already, error default\r\n");
+              if (mod_sd_is_open_AW()) {
+                  flush_sd_before_close();
+                  mod_sd_close_and_unmount_AW();
+              }
+          }
+
           break;
         }
 

@@ -42,6 +42,7 @@
 #include "microsd.h"
 
 #define SD_FILE_MAX_SIZE (5*1024*1024) // Keep units in bytes
+#define SD_RECOVERY_FAIL_THRESHOLD 5
 
 //TaskHandle_t mod_sd_init_task_handle;
 //TaskHandle_t mod_sd_cmd_task_handle;
@@ -59,8 +60,9 @@ static FIL cfg_fp;  // config file handle, static to avoid putting large FIL str
 static OS_MUTEX sd_mutex;         // AW, protecting fp so write and close cant overlap
 static volatile uint8_t sd_file_open = 0; // AW, 0 for when not safe to write, 1 for when is safe to write
 static volatile bool sd_init_done = false;
+static volatile bool sd_mounted = false;
 static volatile uint8_t sd_write_prev = 0;
-static void mod_sd_open_sensor_log_AW(void); // AW added, is a forward declaration
+static void mod_sd_open_AW(void); // AW added, is a forward declaration
 void mod_sd_seed_rtc_AW(void);
 static char name_buf[16];                  // char array for building filename string "data_xxxx.csv"
 
@@ -193,21 +195,15 @@ void mod_sd_init_task()
   mod_sd_enable_hardware_AW();
   mod_sd_seed_rtc_AW();
 
+  printf("SD: calling MICROSD_Init\r\n");
   MICROSD_Init();
 
+  printf("SD: calling f_mount\r\n");
 //  SEGGER_SYSVIEW_WarnfHost("mount");
   res = f_mount(&fat_fs,(TCHAR*)"", 1);
 
-  if(res == (FRESULT)RES_OK)
-  {
-      printf("FATfs mount success\r\n");
-      mod_sd_open_sensor_log_AW();
-  }
-  else
-  {
-      printf("Unable to mount FAT fs.\r\n");
-  }
-
+  if(res == (FRESULT)RES_OK) { printf("FATfs mount success\r\n"); sd_mounted = true;} // set flag true
+  else { printf("Unable to mount FAT fs, res=%d\r\n",(int)res); }
 
 //  xTaskNotifyGive(mod_som_init_task_handle);
 
@@ -262,7 +258,7 @@ void mod_sd_create_init_task()
 }
 
 // AW added the following task:
-static void mod_sd_open_sensor_log_AW(void){
+static void mod_sd_open_AW(void){
   UINT bw;                                   // bw (bytes written) so f_write fills this in after the write
   TCHAR file_name[16];                       // array for the UTF-16 encoded file path
   FILINFO fno;                                // FatFS file info struct
@@ -272,11 +268,20 @@ static void mod_sd_open_sensor_log_AW(void){
   while (lo < hi) {
       int mid = lo + (hi - lo) / 2;
       snprintf(name_buf, sizeof(name_buf), "data_%04d.csv", mid); // build filename string in RAM, %04d zero-pads the number
-      mod_sd_ff_encode(name_buf, file_name, strlen(name_buf)); // encode filename for FatFS: converting string into format for FatFS storing it in file_name
-      if (f_stat(file_name, &fno) == FR_NO_FILE) hi = mid; // file missing: first unused slot is at mid or below, shrink top of window
-      else lo = mid + 1;                                     // file exists: first unused slot is above mid, shrink bottom of window
+      mod_sd_ff_encode(name_buf, file_name, strlen(name_buf));    // encode filename for FatFS: converting string into format for FatFS storing it in file_name
+      FRESULT stat_res = f_stat(file_name, &fno);
+      if (stat_res == FR_NO_FILE) hi = mid;                       // file missing: first unused slot is at mid or below, shrink top of window
+      else if (stat_res ==FR_OK) { lo = mid + 1; }                // file exists: first unused slot is above mid, shrink bottom of window
+      else {                                                      // neither: card error, dont treat as file exists
+          printf("SD: file scan failed: %d\r\n",stat_res);
+          sd_mounted = false;
+          GPIO_PinOutSet(gpioPortH, 11);               // green off
+          GPIO_PinOutClear(gpioPortH, 10);             // red on
+          return;
+      }
   }
   file_num = lo;
+  printf("SD: scan done, file_num=%d\r\n", file_num);
 
   if(file_num>9999){
       printf("SD error:max file count has been reached \r\n");
@@ -294,54 +299,87 @@ static void mod_sd_open_sensor_log_AW(void){
   if(fres==FR_OK){
       GPIO_PinOutSet(gpioPortH, 10);    // clear red error LED on successful open
       GPIO_PinOutClear(gpioPortH,11); // turn on led to GREEN: LED is active low (driving low turns it on)
+      printf("SD: f_open ok, writing header\r\n");
       sd_file_open = 1;               // set flag s.t. fp is now valid and writing is allowed
-      f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data, Controller Output\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data, Controller Output\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
-      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n", sizeof("Pressure [bar],Temperature [F],time [sec], hall, controller output\r\n") - 1, &bw);
+      f_write(&fp,"MOD LAB: Keller pressure sensor & Hall Effect sensor data and Controller Output\r\n",sizeof("MOD LAB: Keller pressure sensor & Hall Effect sensor data and Controller Output\r\n") - 1,&bw); // writes bytes to the file, bw receives the actual bytes written
+      f_write(&fp, "Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n", sizeof("Pressure [bar],Temperature [F],time [sec],hall, controller output\r\n") - 1, &bw);
       printf("File created: %s \r\n", name_buf);
   }
   else {
       printf("File open has failed: %d\r\n",fres);
+      sd_mounted = false;             // next attempt does a full remount
       GPIO_PinOutSet(gpioPortH, 11);  // turn off led to GREEN — no longer accurate to claim "recording"
       GPIO_PinOutClear(gpioPortH,10); // turn on led to RED: LED is active low (driving low turns it on)
   }
 }
 
 bool mod_sd_remount_and_open_AW(void){
+  static uint8_t sd_recovery_fail_count = 0;
+  RTOS_ERR err;
+  bool power_cycled_flag = false;
+
+  if (sd_recovery_fail_count >= SD_RECOVERY_FAIL_THRESHOLD){
+      printf("Power cycling SD card after %d failed recovery attempts\r\n", sd_recovery_fail_count);
+      // TODO change GPIO pin to power off
+      OSTimeDlyHMSM(0,0,1,0,OS_OPT_TIME_HMSM_STRICT,&err);
+      // TODO change GPIO pin to power on
+      sd_recovery_fail_count=0;
+      power_cycled_flag = true;
+  }
+
   FRESULT res = f_mount(&fat_fs, (TCHAR*)"", 1);
   if (res != FR_OK) {
       printf("Remount failed: %d\r\n", res);
+      sd_recovery_fail_count++;
       return false;
   }
-  printf("Remount success\r\n");
-  mod_sd_open_sensor_log_AW();
+
+  if (power_cycled_flag){ printf("Remount success after power cycling then f_mount\r\n");  }
+  else {  printf("Remount success from f_mount alone\r\n"); }
+
+  sd_mounted = true;
+
+  mod_sd_open_AW();
   if (!mod_sd_is_open_AW()) {
       printf("File open failed after remount.\r\n");
+      sd_mounted = false; //  open failed, next attempt should do a full remount
+      sd_recovery_fail_count++;
       return false;
   }
+  sd_recovery_fail_count=0;
   return true;
 }
 
 uint8_t mod_sd_is_open_AW(void) { return sd_file_open; }
 bool mod_sd_init_done_AW(void) { return sd_init_done; }
+bool mod_sd_is_mounted_AW(void) { return sd_mounted; }
 
 void mod_sd_close_and_unmount_AW(void) {
     RTOS_ERR err;
     OSMutexPend(&sd_mutex, 0, OS_OPT_PEND_BLOCKING, NULL, &err); // acquire mutex
 
-    if (!sd_file_open) {
-        OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // protecting fp so write and close cant overlap
-        printf("SD card already unmounted.\r\n");
-        return;
+    uint8_t file_open_status = sd_file_open ; // snapshot the file open state before clearing
+
+    if (file_open_status){
+        f_close(&fp); // only close file if it was open
     }
 
     sd_file_open = 0; // clear flag now that mutex is acquired
     sd_write_prev = 0; // clear so next first successful write will trigger the LED to turn on
     OSMutexPost(&sd_mutex, OS_OPT_POST_NONE, &err); // release the lock
-    f_close(&fp);
-    f_mount(NULL, (TCHAR*)"", 0); // unmount file system
+
+    f_mount(NULL, (TCHAR*)"", 0); // always unmount regardless of if file was open or not
+    sd_mounted = false;
+
     GPIO_PinOutSet(gpioPortH, 11); // turn off LED
     GPIO_PinOutSet(gpioPortH, 15); // turn off LED
-    printf("SD card safe to remove.\r\n");
+
+    if (file_open_status){
+        printf("SD card safe to remove.\r\n");
+    }
+    else {
+        printf("SD card file was not open, card was still unmounted.\r\n");
+    }
 }
 
 bool mod_sd_write_AW(char *buf, int len){
@@ -350,24 +388,49 @@ bool mod_sd_write_AW(char *buf, int len){
   bool successful_write = false;
   OSMutexPend(&sd_mutex,0,OS_OPT_PEND_BLOCKING,NULL,&err);  // acquire sd_mutex lock before touching fp, protecting fp so write and close cant overlap
 
+  if (!sd_file_open) {
+      if (sd_mounted){ mod_sd_open_AW(); } // card already mounted, just create file
+      else { mod_sd_remount_and_open_AW(); }
+   }
+
+   if (buf == NULL) {
+       OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);
+       return sd_file_open;
+   }
+
   if(sd_file_open){
 
       if ((int)f_size(&fp) + len >= SD_FILE_MAX_SIZE) {
+          printf("File size limit reached\r\n");
           f_close(&fp);
           sd_file_open = 0;
-          mod_sd_open_sensor_log_AW(); // find next file name and open it
-          printf("File size limit reached, opened: %s\r\n", name_buf);
+          mod_sd_open_AW(); // find next file name and open it
+
+          if (!sd_file_open){
+                mod_sd_remount_and_open_AW();
+                if (!sd_file_open){ // if it fails after trying a remount
+                    OSMutexPost(&sd_mutex,OS_OPT_POST_NONE,&err);
+                    printf("New file opening failed\r\n");
+                    return false; // remount did not open a file either
+                }
+          }
+          printf("Reopened new file\r\n");
       }
 
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
+
       if (fres != FR_OK){
           sd_write_prev = 0;
           GPIO_PinOutSet(gpioPortH, 15); // turn LED off, only on transition from ok to failed
           printf("SD write error: %d\r\n", fres);
           f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
           sd_file_open = 0;    // clear flag to match closed state
-          mod_sd_open_sensor_log_AW();    // open a fresh file so recovery is automatic
+          mod_sd_open_AW();    // open a fresh file so recovery is automatic
+          if (!sd_file_open){
+              mod_sd_remount_and_open_AW();
+          }
       }
+
       else {
           FRESULT fsync_res = f_sync(&fp);            // flush to SD card to protect against power loss before unmount
           if (fsync_res != FR_OK){
@@ -376,7 +439,10 @@ bool mod_sd_write_AW(char *buf, int len){
               printf("SD sync error: %d\r\n", fsync_res);
               f_close(&fp);        // close corrupted handle so subsequent writes don't keep failing
               sd_file_open = 0;    // clear flag to match closed state
-              mod_sd_open_sensor_log_AW();    // open a fresh file so recovery is automatic
+              mod_sd_open_AW();    // open a fresh file so recovery is automatic
+              if (!sd_file_open){
+                  mod_sd_remount_and_open_AW();
+              }
           }
           else { // LED handling
               if(!sd_write_prev){
@@ -437,7 +503,7 @@ static const char* switch_direction_to_str(switch_direction_t d) {
 }
 
 void mod_sd_load_config_AW(run_time_variables_t *cfg){
-  char   cfg_buf[200];
+  char   cfg_buf[300];
   UINT   br;
   TCHAR  cfg_name[16];
 
@@ -450,17 +516,20 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
       res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_NEW);
        if (res == FR_OK) {
            UINT bw;
-           char line[200];
+           char line[300];
            int len = snprintf(line, sizeof(line),
                     "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n"
-                    "switch_on_direction=%s\r\nswitch_on_depth_mbar=%ld\r\nswitch_off_direction=%s\r\nswitch_off_depth_mbar=%ld\r\n",
+                    "switch_on_direction=%s\r\nswitch_on_depth_mbar=%ld\r\nswitch_off_direction=%s\r\nswitch_off_depth_mbar=%ld\r\n"
+                    "expected_bottom_turnaround_depth_mbar=%ld\r\n",
                     cfg->sample_rate_hz,
                     (int)cfg->logging_on_flg,
                     (int)cfg->controller_on_flg,
                     switch_direction_to_str(cfg->switch_on_direction),
                     (long)cfg->switch_on_depth_mbar,
                     switch_direction_to_str(cfg->switch_off_direction),
-                    (long)cfg->switch_off_depth_mbar);
+                    (long)cfg->switch_off_depth_mbar,
+                    (long)cfg->expected_bottom_turnaround_depth_mbar);
+           if (len > (int)sizeof(line) - 1) len = (int)sizeof(line) - 1;  // snprintf returns what it WANTED to write
            f_write(&cfg_fp, line, len, &bw);
            f_close(&cfg_fp);
            printf("config.cfg created with defaults\r\n");
@@ -480,6 +549,7 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
       long parsed_off_depth_mbar = -1;
       char switch_on_direction_str[16] = "";
       char switch_off_direction_str[16] = "";
+      long parsed_expected_mbar = -1;
 
       // parse line by line — overwrites in memory the fields that exist in the file,
       // leaving the rest at the defaults set in SYS_STARTUP
@@ -514,26 +584,33 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
           if (sscanf(line, "switch_off_depth_mbar=%ld", &parsed_off_depth_mbar) == 1) {
               cfg->switch_off_depth_mbar = (int32_t)parsed_off_depth_mbar;
           }
+          if (sscanf(line, "expected_bottom_turnaround_depth_mbar=%ld", &parsed_expected_mbar) == 1) {
+              cfg->expected_bottom_turnaround_depth_mbar = (int32_t)parsed_expected_mbar;
+          }
           line = strtok(NULL, "\r\n");  // advance to next line; NULL continues from last strtok position
       }
 
       if (parsed_hz == -1 || parsed_logging == -1 || parsed_controller == -1
           || switch_on_direction_str[0] == '\0' || parsed_on_depth_mbar == -1
-          || switch_off_direction_str[0] == '\0' || parsed_off_depth_mbar == -1) {
+          || switch_off_direction_str[0] == '\0' || parsed_off_depth_mbar == -1
+          || parsed_expected_mbar == -1) {
           FRESULT rewrite_res = f_open(&cfg_fp, cfg_name, FA_WRITE | FA_CREATE_ALWAYS);
           if (rewrite_res == FR_OK) {
               UINT bw;
-              char out_line[200];
+              char out_line[300];
               int len = snprintf(out_line, sizeof(out_line),
                                  "sample_rate_hz=%u\r\nlogging_on_flg=%d\r\ncontroller_on_flg=%d\r\n"
-                                 "switch_on_direction=%s\r\nswitch_on_depth_mbar=%ld\r\nswitch_off_direction=%s\r\nswitch_off_depth_mbar=%ld\r\n",
+                                 "switch_on_direction=%s\r\nswitch_on_depth_mbar=%ld\r\nswitch_off_direction=%s\r\nswitch_off_depth_mbar=%ld\r\n"
+                                 "expected_bottom_turnaround_depth_mbar=%ld\r\n",
                                  cfg->sample_rate_hz,
                                  (int)cfg->logging_on_flg,
                                  (int)cfg->controller_on_flg,
                                  switch_direction_to_str(cfg->switch_on_direction),
                                  (long)cfg->switch_on_depth_mbar,
                                  switch_direction_to_str(cfg->switch_off_direction),
-                                 (long)cfg->switch_off_depth_mbar);
+                                 (long)cfg->switch_off_depth_mbar,
+                                 (long)cfg->expected_bottom_turnaround_depth_mbar);
+              if (len > (int)sizeof(out_line) - 1) len = (int)sizeof(out_line) - 1;  // snprintf returns what it WANTED to write
               f_write(&cfg_fp, out_line, len, &bw);
               f_close(&cfg_fp);
               printf("config.cfg updated with missing fields\r\n");
@@ -545,6 +622,44 @@ void mod_sd_load_config_AW(run_time_variables_t *cfg){
   }
   else {
       printf("config.cfg open error: %d, using defaults\r\n", res);
+  }
+
+}
+
+void mod_sd_depth_turnaround_log_AW(uint64_t ticks, int32_t turnaround_depth){
+  FIL log_depth_fp;
+  UINT bw;
+  char log_depth_buf[64];
+
+  TCHAR log_depth_file_name[25]; // 24 TCHAR's, +1 for null
+  mod_sd_ff_encode("depth_turnaround_log.csv",log_depth_file_name,strlen("depth_turnaround_log.csv"));
+  FRESULT fres=f_open(&log_depth_fp,log_depth_file_name,FA_OPEN_ALWAYS|FA_WRITE); // opens if exists, creates depth log file if one doesn't exist already
+
+  if (fres==FR_OK){
+      if(f_size(&log_depth_fp)==0){ // if file header doesn't already exist, make it
+          f_write(&log_depth_fp,"sec_time_at_depth,turnaround_depth_bar,data_file\r\n",strlen("sec_time_at_depth,turnaround_depth_bar,data_file\r\n"),&bw);
+      }
+
+      f_lseek(&log_depth_fp,f_size(&log_depth_fp)); // seek to end so new entries appended and not re-written
+
+      uint32_t freq = sl_sleeptimer_get_timer_frequency();
+      uint64_t t_sec_whole = ticks / freq;
+      uint64_t t_sec_frac  = ((ticks % freq) * 1000000) / freq;
+
+      snprintf(log_depth_buf,sizeof(log_depth_buf),"%02lu%06lu.%06lu,%c%03d.%03d,%s\r\n",
+               (uint32_t)(t_sec_whole / 1000000),
+               (uint32_t)(t_sec_whole % 1000000),
+               (uint32_t)t_sec_frac,
+               (turnaround_depth<0 ? '-':' '),
+               (int)(abs(turnaround_depth) / 1000),
+               (int)(abs(turnaround_depth) % 1000),
+               mod_sd_get_filename_AW());
+
+      f_write(&log_depth_fp,log_depth_buf,strlen(log_depth_buf),&bw);
+      f_close(&log_depth_fp);
+  }
+  else {
+      printf("depth turnaround log open error: %d\r\n", fres);
   }
 
 }

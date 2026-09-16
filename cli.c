@@ -60,7 +60,7 @@ void start_acquisition_cmd(sl_cli_command_arg_t *arguments);
 void stop_acquisition_cmd(sl_cli_command_arg_t *arguments);
 void read_sensors_cmd(sl_cli_command_arg_t *arguments);
 
-void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments);
+//void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments);
 
 /*******************************************************************************
  ***************************  LOCAL VARIABLES   ********************************
@@ -120,7 +120,7 @@ static const sl_cli_command_info_t cmd__sd_read = \
 static const sl_cli_command_info_t cmd__sd_set_time = \
   SL_CLI_COMMAND(sd_set_time_cmd,
                  "set time for current sd card data run in the form of:",
-                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day" SL_CLI_UNIT_SEPARATOR "hour" SL_CLI_UNIT_SEPARATOR "min" SL_CLI_UNIT_SEPARATOR "sec",
+                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day(##)" SL_CLI_UNIT_SEPARATOR "hour(##)" SL_CLI_UNIT_SEPARATOR "min(##)" SL_CLI_UNIT_SEPARATOR "sec(##)",
                  { SL_CLI_ARG_UINT16, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_END, });
 
 static const sl_cli_command_info_t cmd__get_time = \
@@ -153,11 +153,11 @@ static const sl_cli_command_info_t cmd__read_sensors = \
                  "",
                  { SL_CLI_ARG_END, });
 
-static const sl_cli_command_info_t cmd__set_switch_on_depth = \
-  SL_CLI_COMMAND(set_switch_on_depth_cmd,
-                 "set switch_on_depth_mbar, only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE",
-                 "depth_mbar",
-                 { SL_CLI_ARG_INT32, SL_CLI_ARG_END, });
+//static const sl_cli_command_info_t cmd__set_switch_on_depth = \
+//  SL_CLI_COMMAND(set_switch_on_depth_cmd,
+//                 "set switch_on_depth_mbar, only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE",
+//                 "depth_mbar",
+//                 { SL_CLI_ARG_INT32, SL_CLI_ARG_END, });
 
 static sl_cli_command_entry_t a_table[] = {
   { "echo_str", &cmd__echostr, false },
@@ -174,7 +174,7 @@ static sl_cli_command_entry_t a_table[] = {
   { "start_acqu", &cmd__start_acquisition, false },
   { "stop_acqu",  &cmd__stop_acquisition,  false },
   { "read_sensors",    &cmd__read_sensors,    false },
-  { "set_switch_on_depth", &cmd__set_switch_on_depth, false },
+//  { "set_switch_on_depth", &cmd__set_switch_on_depth, false },
   { NULL, NULL, false },
 };
 
@@ -453,9 +453,8 @@ void sd_read_cmd(sl_cli_command_arg_t *arguments)
  * The command is used to set the time.
  ******************************************************************************/
 void sd_set_time_cmd(sl_cli_command_arg_t *arguments){
-  if (sl_cli_get_argument_count(arguments)<6){
-      printf("usage: set_time YYYY MM DD HH MM SS\r\n");
-      printf("ex:    set_time 2000 12 25 12 30 01\r\n");
+  if (!mod_sd_is_open_AW()){
+      printf("set_time not available: no data file open, run start_acqu with logging on first\r\n");
       return;
   }
   uint16_t year = sl_cli_get_argument_uint16(arguments, 0);
@@ -515,6 +514,10 @@ void start_acquisition_cmd(sl_cli_command_arg_t *arguments) {
 
     // This is to ensure you cant run this command prior to completing init states
     system_state_t state = system_get_state();
+    if (state  == SYS_ERR){
+        printf("command not available: system in SYS_ERR, power cycle required\r\n");
+        return;
+    }
     if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
         printf("command not available: system not fully initialized\r\n");
         return;
@@ -546,6 +549,10 @@ void stop_acquisition_cmd(sl_cli_command_arg_t *arguments) {
 
     // This is to ensure you cant run this command prior to completing init states
     system_state_t state = system_get_state();
+    if (state  == SYS_ERR){
+        printf("command not available: system in SYS_ERR, power cycle required\r\n");
+        return;
+    }
     if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
         printf("command not available: system not fully initialized\r\n");
         return;
@@ -574,6 +581,10 @@ void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
 
     // This is to ensure you cant run this command prior to completing init states
     system_state_t state = system_get_state();
+    if (state  == SYS_ERR){
+        printf("command not available: system in SYS_ERR, power cycle required\r\n");
+        return;
+    }
     if (state != SYS_RUNNING_MODE_CHECK_AND_IDLE && state != SYS_ACQU) {
         printf("command not available: system not fully initialized\r\n");
         return;
@@ -589,21 +600,21 @@ void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
     system_request_single_read(); //sets flag to true
 }
 
-/****************************************************************************//**
- * Callback for set_switch_on_depth_cmd
- *
- * The command is used to change the value of the switching on depth
- ******************************************************************************/
-void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments) {
-    if (system_get_state() != SYS_RUNNING_MODE_CHECK_AND_IDLE) {
-        printf("need to stop acqu and go into SYS_RUNNING_MODE_CHECK_AND_IDLE first\r\n");
-        return;
-    }
-
-    int32_t depth_mbar = sl_cli_get_argument_int32(arguments, 0);
-    system_set_switch_on_depth_mbar(depth_mbar);
-    printf("switch_on_depth_mbar set to %ld\r\n", (long)depth_mbar);
-}
+///****************************************************************************//**
+// * Callback for set_switch_on_depth_cmd
+// *
+// * The command is used to change the value of the switching on depth
+// ******************************************************************************/
+//void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments) {
+//    if (system_get_state() != SYS_RUNNING_MODE_CHECK_AND_IDLE) {
+//        printf("need to stop acqu and go into SYS_RUNNING_MODE_CHECK_AND_IDLE first\r\n");
+//        return;
+//    }
+//
+//    int32_t depth_mbar = sl_cli_get_argument_int32(arguments, 0);
+//    system_set_switch_on_depth_mbar(depth_mbar);
+//    printf("switch_on_depth_mbar set to %ld\r\n", (long)depth_mbar);
+//}
 
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
@@ -623,7 +634,7 @@ void cli_app_init(void)
   printf("  Started CLI Micrium OS\r\n");
 
   printf("  Instructions:\r\n");
-  printf("  1. Please wait for the following initialization messages: successful Fat FS mount, file creation, and sensor found\r\n");
+  printf("  1. Please wait for the following initialization messages: successful Fat FS mount, and sensor found\r\n");
   printf("  2. Use set_time to document time during data collection\r\n");
   printf("---------------------------------\r\n");
 }

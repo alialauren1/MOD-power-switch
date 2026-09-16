@@ -49,9 +49,13 @@ uint8_t mod_sd_is_open_AW(void);
 bool mod_sd_init_done_AW(void);
 void mod_sd_enable_hardware_AW(void);
 void mod_sd_seed_rtc_AW(void);
+bool mod_sd_is_mounted_AW(void);
 
 const char* mod_sd_get_filename_AW(void);
 void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day,
                               uint8_t hour, uint8_t min, uint8_t sec);
 void mod_sd_load_config_AW(run_time_variables_t *cfg);
+
+void mod_sd_depth_turnaround_log_AW(uint64_t ticks, int32_t turnaround_depth);
+
 #endif /* MOD_SD_H_ */
