@@ -119,8 +119,8 @@ static const sl_cli_command_info_t cmd__sd_read = \
 
 static const sl_cli_command_info_t cmd__sd_set_time = \
   SL_CLI_COMMAND(sd_set_time_cmd,
-                 "set time for current sd card data run in the form of:",
-                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day(##)" SL_CLI_UNIT_SEPARATOR "hour(##)" SL_CLI_UNIT_SEPARATOR "min(##)" SL_CLI_UNIT_SEPARATOR "sec(##)",
+                 "set time for current sd card data, no leading zeros",
+                 "year(YYYY)" SL_CLI_UNIT_SEPARATOR "month(1-12)" SL_CLI_UNIT_SEPARATOR "day" SL_CLI_UNIT_SEPARATOR "hour" SL_CLI_UNIT_SEPARATOR "min" SL_CLI_UNIT_SEPARATOR "sec",
                  { SL_CLI_ARG_UINT16, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_UINT8, SL_CLI_ARG_END, });
 
 static const sl_cli_command_info_t cmd__get_time = \

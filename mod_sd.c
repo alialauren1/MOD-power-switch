@@ -476,19 +476,28 @@ void mod_sd_log_set_time_AW(uint16_t year, uint8_t month, uint8_t day, uint8_t h
   FIL log_time_fp;
   UINT bw;
   char log_time_buf[64];
-  uint32_t ticks = sl_sleeptimer_get_tick_count(); // tick count at moment set_time was installed
+  uint64_t ticks = sl_sleeptimer_get_tick_count64(); // tick count at moment set_time was installed
 
   TCHAR log_time_file_name[16];
   mod_sd_ff_encode("time_log.csv",log_time_file_name, strlen("time_log.csv"));
   FRESULT fres = f_open(&log_time_fp,log_time_file_name, FA_OPEN_ALWAYS | FA_WRITE); // create time log file if doesn't already exist
   if (fres==FR_OK){
       if (f_size(&log_time_fp)==0){ // if file header doesn't already exist, make it
-          f_write(&log_time_fp, "data_file,real_world_time,ticks_at_set_time\r\n",strlen("data_file,real_world_time,ticks_at_set_time\r\n"), &bw);
+          f_write(&log_time_fp, "data_file,real_world_time,sec_at_set_time\r\n",strlen("data_file,real_world_time,sec_at_set_time\r\n"), &bw);
       }
 
       f_lseek(&log_time_fp,f_size(&log_time_fp)); // seek to end so new entries are appended and not re-written
 
-      snprintf(log_time_buf,sizeof(log_time_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%lu\r\n",mod_sd_get_filename_AW(), year, month, day, hour, min, sec, ticks);
+      uint32_t freq = sl_sleeptimer_get_timer_frequency();
+      uint64_t t_sec_whole = ticks / freq;
+      uint64_t t_sec_frac  = ((ticks % freq) * 1000000) / freq;
+
+      snprintf(log_time_buf,sizeof(log_time_buf),"%s,%04u-%02u-%02u %02u:%02u:%02u,%02lu%06lu.%06lu\r\n",
+                     mod_sd_get_filename_AW(), year, month, day, hour, min, sec,
+                     (uint32_t)(t_sec_whole / 1000000),
+                     (uint32_t)(t_sec_whole % 1000000),
+                     (uint32_t)t_sec_frac);
+
       f_write(&log_time_fp,log_time_buf,strlen(log_time_buf),&bw);
       f_close(&log_time_fp);
   }
