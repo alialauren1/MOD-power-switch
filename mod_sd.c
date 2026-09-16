@@ -334,20 +334,14 @@ bool mod_sd_remount_and_open_AW(void){
           if (res!=FR_OK){
               printf("Remount failed after power cycling: %d\r\n", res);
            }
-
       }
       if (res!=FR_OK){
           return false;
        }
-
   }
 
-  if (power_cycled_flag){
-      printf("Remount success after power cycling then f_mount\r\n");
-  }
-  else {
-      printf("Remount success from f_mount alone\r\n");
-  }
+  if (power_cycled_flag){ printf("Remount success after power cycling then f_mount\r\n");  }
+  else {  printf("Remount success from f_mount alone\r\n"); }
 
   sd_remount_fail_count=0;
   sd_mounted = true;
