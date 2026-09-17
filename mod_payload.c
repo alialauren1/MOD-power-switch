@@ -28,7 +28,7 @@ bool payload_init(void)
   // TODO software switch: DONT assume state of payload.
   // Serial payload runs through MCU reset so on startup payload may be in measurement mode.
   // Use GETSTATE to query and set payload commanded based on the reply.
-  // Set PAYLOAD_STATE_UNKOWN if no reply.
+  // Set PAYLOAD_STATE_UNKNOWN if no reply.
 
   return true;
 }

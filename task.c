@@ -43,6 +43,7 @@
 #include "em_gpio.h"
 #include "em_cmu.h"
 #include "mod_executive_system.h"
+#include "mod_payload.h"
 
 //For Keller_get_pressure_taskd
 #define SENSOR_I2C_ADDR     0x40
@@ -437,7 +438,7 @@ void get_sensor_data_task(void *p_arg)
                           if (avg_sample_counter == (avg_sample_count+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
                                t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
                                hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
-                               ctrl_out_midway = GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN);
+                               ctrl_out_midway = (payload_get_commanded() == PAYLOAD_STATE_MEASURING);
                           }
                           if (avg_sample_counter == avg_sample_count) {
                               if (system_get_logging_flag()){
@@ -767,8 +768,7 @@ void controller_task(void *p_arg) {
   (void)p_arg;
   RTOS_ERR err;
 
-  CMU_ClockEnable(cmuClock_GPIO, true);
-  GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // starts HIGH = instrument ON (fail-safe default)
+
 
   sensor_sample_t sample3;
   int32_t latest_p_mbar = 0;
@@ -795,7 +795,7 @@ void controller_task(void *p_arg) {
                  (int)(abs(latest_p_mbar) / 1000),
                  (int)(abs(latest_p_mbar) % 1000),
                  latest_hall,
-                 GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN));
+                 (payload_get_commanded() == PAYLOAD_STATE_MEASURING)); // TODO might not work the same when a serial output is received
 
           // controller's own bottom turn around detection, independent of the logger task
           if (ctrl_prev_hall != -1 && latest_hall != ctrl_prev_hall){
@@ -873,7 +873,7 @@ void controller_task(void *p_arg) {
         }
         case STATE_TURN_OFF: {
           printf("CTRL S2\r\n");
-          GPIO_PinOutClear(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // LOW = instrument OFF
+          payload_ctrl_sleep(); // sleep is instrument stops sampling
           controller_task_state = STATE_OFF_AND_WAIT;
           break;
         }
@@ -891,14 +891,14 @@ void controller_task(void *p_arg) {
         }
         case STATE_TURN_ON: {
           printf("CTRL S4\r\n");
-          GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
+          payload_ctrl_meas(); // instrument sampling
           bottom_turn_around_complete = false; // reset, haven't seen opposite direction since this was ON
           controller_task_state = STATE_ON_AND_WAIT;
           break;
         }
       }
 
-      OSTimeDly(100, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(1000, OS_OPT_TIME_DLY, &err);
 
       // continuous adaptation: re-correct every time the ctrller records a new bottom turn around
       if (ctrl_bottom_turnaround_counter != prev_counter) {

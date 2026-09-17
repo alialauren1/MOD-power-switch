@@ -12,6 +12,7 @@
 #include "os.h"
 #include "rtos_err.h"
 #include <stdio.h>
+#include "mod_payload.h"
 
 #define EXECUTIVE_TASK_PRIO 5u
 #define EXECUTIVE_TASK_STK_SIZE 1024u
@@ -129,7 +130,7 @@ static void executive_task(void *p_arg) {
           retrieve_data_from_buffer_and_sd_store_task_create(); retrieve_task_suspend();          // for data logging
           retrieve_data_from_buffer2_and_single_read_task_create(); retrieve_buf2_task_suspend(); // for single reads
 
-          GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // configures pin
+          payload_init(); // configures payload, leaves payload ON (fail-safe)
 
           controller_task_create(); controller_task_suspend();
           button_stop_acqu_task_create(); button_stop_acqu_task_suspend();
@@ -216,8 +217,8 @@ static void executive_task(void *p_arg) {
                   if (run_time_vars.controller_on_flg) {
                       controller_task_suspend();
                   }
-                  if (!GPIO_PinOutGet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN)) {   // TODO: make this a function can handle software & hardware power switch checking
-                      GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure payloads have power to them, TODO: this may evolve to a software switch
+                  if (payload_status() != PAYLOAD_STATE_MEASURING) {
+                      payload_ctrl_meas(); // ensure payload is ON when acquisition stops
                   }
                   if (button_task_is_running){
                       button_stop_acqu_task_suspend();
@@ -247,9 +248,9 @@ static void executive_task(void *p_arg) {
         case SYS_ERR: {
           if (state_entry) {
               printf("S8: entered SYS_ERR\r\n");
-              GPIO_PinModeSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN, gpioModePushPull, 1); // ensure pin is driven
-              GPIO_PinOutSet(CONTROLLER_OUTPUT_PORT, CONTROLLER_OUTPUT_PIN); // HIGH = instrument ON
-              printf("set power ON if wasn't already, error default\r\n");
+              if (payload_status() != PAYLOAD_STATE_MEASURING) { // if not already measuring, set to measure mode
+                  payload_ctrl_meas(); printf("set payload to measuring since wasnt, error default\r\n");}
+              else {printf("payload already measuring\r\n");}
               if (mod_sd_is_open_AW()) {
                   flush_sd_before_close();
                   mod_sd_close_and_unmount_AW();
