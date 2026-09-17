@@ -898,7 +898,7 @@ void controller_task(void *p_arg) {
         }
       }
 
-      OSTimeDly(1000, OS_OPT_TIME_DLY, &err);
+      OSTimeDly(100, OS_OPT_TIME_DLY, &err);
 
       // continuous adaptation: re-correct every time the ctrller records a new bottom turn around
       if (ctrl_bottom_turnaround_counter != prev_counter) {
