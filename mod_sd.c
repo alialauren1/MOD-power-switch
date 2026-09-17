@@ -414,7 +414,7 @@ bool mod_sd_write_AW(char *buf, int len){
                     return false; // remount did not open a file either
                 }
           }
-          printf("Reopened new file\r\n");
+          printf("Opened new file\r\n");
       }
 
       FRESULT fres = f_write(&fp, buf, len, &bw); // only write to sd if fp is valid
