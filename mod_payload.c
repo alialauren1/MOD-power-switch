@@ -24,6 +24,12 @@ bool payload_init(void)
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN, gpioModePushPull, 1); // HIGH = instrument ON
   payload_commanded = PAYLOAD_STATE_MEASURING;
+
+  // TODO software switch: DONT assume state of payload.
+  // Serial payload runs through MCU reset so on startup payload may be in measurement mode.
+  // Use GETSTATE to query and set payload commanded based on the reply.
+  // Set PAYLOAD_STATE_UNKOWN if no reply.
+
   return true;
 }
 
