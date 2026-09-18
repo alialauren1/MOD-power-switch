@@ -198,6 +198,16 @@
 // [TIMER6]$
 
 // $[UART0]
+// UART0 RX on PC5
+#define UART0_RX_PORT                            gpioPortC
+#define UART0_RX_PIN                             5
+#define UART0_RX_LOC                             4
+
+// UART0 TX on PC4
+#define UART0_TX_PORT                            gpioPortC
+#define UART0_TX_PIN                             4
+#define UART0_TX_LOC                             4
+
 // [UART0]$
 
 // $[UART1]
@@ -216,29 +226,19 @@
 // [USART3]$
 
 // $[USART4]
-// USART4 CTS on PH8
-#define USART4_CTS_PORT                          gpioPortH
-#define USART4_CTS_PIN                           8
-#define USART4_CTS_LOC                           4
-
-// USART4 RTS on PH9
-#define USART4_RTS_PORT                          gpioPortH
-#define USART4_RTS_PIN                           9
-#define USART4_RTS_LOC                           4
-
-// USART4 RX on PH5
-#define USART4_RX_PORT                           gpioPortH
-#define USART4_RX_PIN                            5
-#define USART4_RX_LOC                            4
-
-// USART4 TX on PH4
-#define USART4_TX_PORT                           gpioPortH
-#define USART4_TX_PIN                            4
-#define USART4_TX_LOC                            4
-
 // [USART4]$
 
 // $[USART5]
+// USART5 RX on PE9
+#define USART5_RX_PORT                           gpioPortE
+#define USART5_RX_PIN                            9
+#define USART5_RX_LOC                            0
+
+// USART5 TX on PE8
+#define USART5_TX_PORT                           gpioPortE
+#define USART5_TX_PIN                            8
+#define USART5_TX_LOC                            0
+
 // [USART5]$
 
 // $[USB]

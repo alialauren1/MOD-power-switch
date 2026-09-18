@@ -166,6 +166,16 @@
 			<locationURI>STUDIO_SDK_LOC/platform/emlib/inc/em_i2c.h</locationURI>
 		</link>
 		<link>
+			<name>gecko_sdk_4.1.4/platform/emlib/inc/em_ldma.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emlib/inc/em_ldma.h</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emlib/inc/em_leuart.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emlib/inc/em_leuart.h</locationURI>
+		</link>
+		<link>
 			<name>gecko_sdk_4.1.4/platform/emlib/inc/em_msc.h</name>
 			<type>1</type>
 			<locationURI>STUDIO_SDK_LOC/platform/emlib/inc/em_msc.h</locationURI>
@@ -229,6 +239,16 @@
 			<name>gecko_sdk_4.1.4/platform/emlib/src/em_i2c.c</name>
 			<type>1</type>
 			<locationURI>STUDIO_SDK_LOC/platform/emlib/src/em_i2c.c</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emlib/src/em_ldma.c</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emlib/src/em_ldma.c</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emlib/src/em_leuart.c</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emlib/src/em_leuart.c</locationURI>
 		</link>
 		<link>
 			<name>gecko_sdk_4.1.4/platform/emlib/src/em_msc.c</name>
@@ -329,6 +349,41 @@
 			<name>gecko_sdk_4.1.4/platform/driver/i2cspm/src/sl_i2cspm.c</name>
 			<type>1</type>
 			<locationURI>STUDIO_SDK_LOC/platform/driver/i2cspm/src/sl_i2cspm.c</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/common/inc/ecode.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/common/inc/ecode.h</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/dmadrv/inc/dmadrv.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/dmadrv/inc/dmadrv.h</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/dmadrv/src/dmadrv.c</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/dmadrv/src/dmadrv.c</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/gpiointerrupt/inc/gpiointerrupt.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/gpiointerrupt/inc/gpiointerrupt.h</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/gpiointerrupt/src/gpiointerrupt.c</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/gpiointerrupt/src/gpiointerrupt.c</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/uartdrv/inc/uartdrv.h</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/uartdrv/inc/uartdrv.h</locationURI>
+		</link>
+		<link>
+			<name>gecko_sdk_4.1.4/platform/emdrv/uartdrv/src/uartdrv.c</name>
+			<type>1</type>
+			<locationURI>STUDIO_SDK_LOC/platform/emdrv/uartdrv/src/uartdrv.c</locationURI>
 		</link>
 		<link>
 			<name>gecko_sdk_4.1.4/platform/micrium_os/common/include/common.h</name>

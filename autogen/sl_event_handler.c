@@ -11,9 +11,11 @@
 #include "sl_device_init_emu.h"
 #include "sl_board_control.h"
 #include "sl_sleeptimer.h"
+#include "gpiointerrupt.h"
 #include "sl_i2cspm_instances.h"
 #include "sl_iostream_init_usart_instances.h"
 #include "SEGGER_SYSVIEW.h"
+#include "sl_uartdrv_instances.h"
 #include "sl_cli_instances.h"
 #include "cpu.h"
 #include "cmsis_os2.h"
@@ -43,7 +45,9 @@ void sl_kernel_start(void)
 
 void sl_driver_init(void)
 {
+  GPIOINT_Init();
   sl_i2cspm_init_instances();
+  sl_uartdrv_init_instances();
 }
 
 void sl_service_init(void)

@@ -39,6 +39,8 @@ component:
 - {id: segger_systemview}
 - {id: sl_system}
 - {id: sleeptimer}
+- instance: [payload]
+  id: uartdrv_usart
 define:
 - {name: DEBUG_EFM}
 ui_hints: {}

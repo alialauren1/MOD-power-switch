@@ -1,8 +1,10 @@
 #CRC Codes for initially generated config files -- do not modify!
 SEGGER_RTT_Conf.h=-674599354
 SEGGER_SYSVIEW_Conf.h=-679713576
+app_assert_config.h=1717687323
 common_cfg.h=1230894941
 cpu_cfg.h=1255566315
+dmadrv_config.h=-251520731
 emlib_core_debug_config.h=171843933
 fs_core_cfg.h=948861695
 fs_storage_cfg.h=-1101224129
@@ -21,3 +23,6 @@ sl_device_init_lfxo_config.h=1462741487
 sl_i2cspm_sensor_config.h=-1991259740
 sl_iostream_usart_vcom_config.h=684548242
 sl_memory_config.h=-995392215
+sl_simple_com_config.h=2046659132
+sl_uartdrv_usart_payload_config.h=-743127201
+uartdrv_config.h=-1381003705

@@ -2,6 +2,35 @@
 <device:XMLDevice xmi:version="2.0" xmlns:xmi="http://www.omg.org/XMI" xmlns:device="http://www.silabs.com/ss/hwconfig/document/device.ecore" name="pin_tool.EFM32GG11B820F2048GL192" partId="mcu.arm.efm32.gg11.efm32gg11b820f2048gl192" contextId="com.silabs.sdk.stack.super:4.1.4._-824355167">
   <mode name="DefaultMode">
     <property object="DefaultMode" propertyId="mode.diagramLocation" value="100, 100"/>
+    <property object="I2C0" propertyId="ABModule.selectedRequirement" value="i2c%T%SL_I2CSPM_SENSOR%T%sl_i2cspm_sensor_config.h"/>
+    <property object="I2C0" propertyId="ABPeripheral.included" value="true"/>
+    <property object="PA9" propertyId="ABModule.selectedRequirement" value="gpio%T%SL_BOARD_ENABLE_DISPLAY%T%sl_board_control_config.h"/>
+    <property object="PA9" propertyId="pin.reserve" value="Reserved"/>
+    <property object="PB3" propertyId="ABModule.selectedRequirement" value="gpio%T%SL_BOARD_ENABLE_SENSOR_HALL%T%sl_board_control_config.h"/>
+    <property object="PB3" propertyId="pin.reserve" value="Reserved"/>
+    <property object="PC4" propertyId="pin.name" value=""/>
+    <property object="PD0" propertyId="ABModule.selectedRequirement" value="gpio%T%SL_BOARD_ENABLE_SENSOR_MICROPHONE%T%sl_board_control_config.h"/>
+    <property object="PD0" propertyId="pin.reserve" value="Reserved"/>
+    <property object="PE1" propertyId="ABModule.selectedRequirement" value="gpio%T%SL_BOARD_ENABLE_VCOM%T%sl_board_control_config.h"/>
+    <property object="PE1" propertyId="pin.reserve" value="Reserved"/>
+    <property object="PE7" propertyId="ABModule.selectedRequirement" value="gpio%T%SL_BOARD_ENABLE_MEMORY_SDCARD%T%sl_board_control_config.h"/>
+    <property object="PE7" propertyId="pin.reserve" value="Reserved"/>
+    <property object="PG13" propertyId="ABModule.selectedRequirement" value="gpio%T%SL_BOARD_ENABLE_MEMORY_QSPI%T%sl_board_control_config.h"/>
+    <property object="PG13" propertyId="pin.reserve" value="Reserved"/>
+    <property object="PORTIO" propertyId="portio.i2c0.enable.scl" value="Enabled"/>
+    <property object="PORTIO" propertyId="portio.i2c0.enable.sda" value="Enabled"/>
+    <property object="PORTIO" propertyId="portio.i2c0.location.scl" value="4"/>
+    <property object="PORTIO" propertyId="portio.i2c0.location.sda" value="4"/>
+    <property object="PORTIO" propertyId="portio.uart0.enable.rx" value="Enabled"/>
+    <property object="PORTIO" propertyId="portio.uart0.enable.tx" value="Enabled"/>
+    <property object="PORTIO" propertyId="portio.uart0.location.rx" value="4"/>
+    <property object="PORTIO" propertyId="portio.uart0.location.tx" value="4"/>
+    <property object="PORTIO" propertyId="portio.usart5.enable.rx" value="Enabled"/>
+    <property object="PORTIO" propertyId="portio.usart5.enable.tx" value="Enabled"/>
+    <property object="UART0" propertyId="ABModule.selectedRequirement" value="usart%T%SL_UARTDRV_USART_PAYLOAD%T%sl_uartdrv_usart_payload_config.h"/>
+    <property object="UART0" propertyId="ABPeripheral.included" value="true"/>
+    <property object="USART5" propertyId="ABModule.selectedRequirement" value="usart%T%SL_IOSTREAM_USART_VCOM%T%sl_iostream_usart_vcom_config.h"/>
+    <property object="USART5" propertyId="ABPeripheral.included" value="true"/>
   </mode>
   <modeTransition>
     <property object="RESET &#x2192; DefaultMode" propertyId="modeTransition.source" value="RESET"/>

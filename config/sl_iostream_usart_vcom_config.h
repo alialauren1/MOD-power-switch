@@ -87,25 +87,16 @@
 #define SL_IOSTREAM_USART_VCOM_PERIPHERAL        USART5
 #define SL_IOSTREAM_USART_VCOM_PERIPHERAL_NO     5
 
-// USART4 TX on PH4
+// USART5 TX on PE8
 #define SL_IOSTREAM_USART_VCOM_TX_PORT           gpioPortE
 #define SL_IOSTREAM_USART_VCOM_TX_PIN            8
 #define SL_IOSTREAM_USART_VCOM_TX_LOC            0
 
-// USART4 RX on PH5
+// USART5 RX on PE9
 #define SL_IOSTREAM_USART_VCOM_RX_PORT           gpioPortE
 #define SL_IOSTREAM_USART_VCOM_RX_PIN            9
 #define SL_IOSTREAM_USART_VCOM_RX_LOC            0
 
-// USART4 CTS on PH8
-#define SL_IOSTREAM_USART_VCOM_CTS_PORT          gpioPortH
-#define SL_IOSTREAM_USART_VCOM_CTS_PIN           8
-#define SL_IOSTREAM_USART_VCOM_CTS_LOC           4
-
-// USART4 RTS on PH9
-#define SL_IOSTREAM_USART_VCOM_RTS_PORT          gpioPortH
-#define SL_IOSTREAM_USART_VCOM_RTS_PIN           9
-#define SL_IOSTREAM_USART_VCOM_RTS_LOC           4
 // [USART_SL_IOSTREAM_USART_VCOM]$
 // <<< sl:end pin_tool >>>
 
