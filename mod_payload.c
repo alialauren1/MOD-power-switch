@@ -30,8 +30,10 @@ static uint8_t payload_start_str[]     = "START\r\n";
 static uint8_t payload_powerdown_str[] = "POWERDOWN\r\n";
 
 static payload_state_t payload_commanded = PAYLOAD_STATE_UNKNOWN;
+static volatile bool payload_busy = false; // true while a command sequence is being sent
 
 payload_state_t payload_get_commanded(void) { return payload_commanded; }
+bool payload_is_busy(void) { return payload_busy; }
 
 // Nortek break: wake characters, then the break string twice
 static void payload_break(void)
@@ -70,6 +72,8 @@ bool payload_init(void)
 bool payload_ctrl_meas(void)
 {
   RTOS_ERR err;
+  payload_busy = true;
+
   GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // HIGH = instrument ON
 
   payload_break();
@@ -77,6 +81,7 @@ bool payload_ctrl_meas(void)
   OSTimeDly(PAYLOAD_REPLY_WAIT_MS, OS_OPT_TIME_DLY, &err);                                           // TODO: wait for "OK" instead
   UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_start_str, sizeof(payload_start_str) - 1);
   payload_commanded = PAYLOAD_STATE_MEASURING;
+  payload_busy = false;
   return true;
 }
 
@@ -84,12 +89,15 @@ bool payload_ctrl_meas(void)
 bool payload_ctrl_sleep(void)
 {
   RTOS_ERR err;
+  payload_busy = true;
+
   GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = instrument OFF
   payload_break();
   UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_mc_str, sizeof(payload_mc_str) - 1);    // TODO: only if the break reply says Confirmation mode
   OSTimeDly(PAYLOAD_REPLY_WAIT_MS, OS_OPT_TIME_DLY, &err);                                           // TODO: wait for "OK" instead
   UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_powerdown_str, sizeof(payload_powerdown_str) - 1);
   payload_commanded = PAYLOAD_STATE_SLEEP;
+  payload_busy = false;
   return true;
 }
 

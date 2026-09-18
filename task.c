@@ -277,7 +277,12 @@ void retrieve_buf2_task_suspend(void)        { RTOS_ERR err; OSTaskSuspend(&retr
 void retrieve_buf2_task_resume(void)         { RTOS_ERR err; OSTaskResume(&retrieve_from_buf2_tcb, &err); }
 void button_stop_acqu_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&button_stop_acqu_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 void button_stop_acqu_task_resume(void)  { RTOS_ERR err; OSTaskResume(&button_stop_acqu_tcb, &err); }
-void controller_task_suspend(void) { RTOS_ERR err; OSTaskSuspend(&controller_tcb, &err); EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
+
+void controller_task_suspend(void) {
+  RTOS_ERR err;
+  while (payload_is_busy()) { OSTimeDly(1, OS_OPT_TIME_DLY, &err); } // let a payload command finish
+  OSTaskSuspend(&controller_tcb, &err);
+  EFM_ASSERT(err.Code == RTOS_ERR_NONE);}
 
 void get_sensor_data_task_suspend(void) {
     RTOS_ERR err;

@@ -28,4 +28,6 @@ bool payload_ctrl_sleep(void); // command payload into sleep
 payload_state_t payload_status(void);        // query the payload
 payload_state_t payload_get_commanded(void); // last commanded state, always a free read
 
+bool payload_is_busy(void);                  // true while a command sequence is being sent
+
 #endif /* MOD_PAYLOAD_H_ */
