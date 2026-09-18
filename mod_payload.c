@@ -47,6 +47,9 @@ static void payload_break(void)
   OSTimeDly(PAYLOAD_REPLY_WAIT_MS, OS_OPT_TIME_DLY, &err); // TODO: read the reply banner instead
 }
 
+
+// TODO: payload_ctrl_meas() and payload_ctrl_sleep() block the calling task (~1.5 s). Consider in future a separate payload task so the controller keeps sampling.
+
 // -----------------------------------------------------------------------------------
 
 bool payload_init(void)
