@@ -219,6 +219,7 @@ static void executive_task(void *p_arg) {
                   }
                   if (payload_status() != PAYLOAD_STATE_MEASURING) {
                       payload_ctrl_meas(); // ensure payload is ON when acquisition stops
+                      printf("stop: payload was asleep, set to measuring\r\n");
                   }
                   if (button_task_is_running){
                       button_stop_acqu_task_suspend();
