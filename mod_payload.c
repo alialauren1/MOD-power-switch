@@ -54,8 +54,10 @@ payload_state_t payload_status(void)
 {
   // commanded, not confirmed: the output register says what we drove,
   // not what the instrument did with it
-  return GPIO_PinOutGet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN)
-           ? PAYLOAD_STATE_MEASURING
-           : PAYLOAD_STATE_SLEEP;
+  if (GPIO_PinOutGet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN)) {
+      return PAYLOAD_STATE_MEASURING;
+  } else {
+      return PAYLOAD_STATE_SLEEP;
+  }
 }
 
