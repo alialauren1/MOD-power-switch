@@ -11,6 +11,10 @@
 #include "mod_payload.h"
 #include "em_gpio.h"
 #include "em_cmu.h"
+#include "sl_uartdrv_instances.h"
+#include <stdio.h>
+#include "os.h"
+#include "rtos_err.h"
 
 #define PAYLOAD_OUTPUT_PORT  gpioPortA
 #define PAYLOAD_OUTPUT_PIN   13
@@ -24,6 +28,15 @@ bool payload_init(void)
   CMU_ClockEnable(cmuClock_GPIO, true);
   GPIO_PinModeSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN, gpioModePushPull, 1); // HIGH = instrument ON
   payload_commanded = PAYLOAD_STATE_MEASURING;
+
+  // TEMP bench test: send the line 10 times, 0.5 s apart (delays boot ~5 s)
+  RTOS_ERR err;
+  static uint8_t test_msg[] = "UUUU payload UART0 test\r\n";
+  for (int i = 0; i < 10; i++) {
+      Ecode_t ec = UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, test_msg, sizeof(test_msg) - 1);
+      printf("payload UART0 test %d sent, ecode=%lu\r\n", i, (unsigned long)ec);
+      OSTimeDly(500, OS_OPT_TIME_DLY, &err);
+  }
 
   // TODO software switch: DONT assume state of payload.
   // Serial payload runs through MCU reset so on startup payload may be in measurement mode.
