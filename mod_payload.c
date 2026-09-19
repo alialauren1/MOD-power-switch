@@ -33,6 +33,8 @@ static uint8_t payload_mc_str[]        = "MC\r\n";
 static uint8_t payload_start_str[]     = "START\r\n";
 static uint8_t payload_powerdown_str[] = "POWERDOWN\r\n";
 
+static uint8_t payload_inq_str[]       = "INQ\r\n";
+
 static uint8_t payload_rx_buf[PAYLOAD_RX_BUF_SIZE];
 
 static payload_state_t payload_commanded = PAYLOAD_STATE_UNKNOWN;
@@ -41,7 +43,7 @@ static volatile bool payload_busy = false; // true while a command sequence is b
 payload_state_t payload_get_commanded(void) { return payload_commanded; }
 bool payload_is_busy(void) { return payload_busy; }
 
-// last CONFIRMED state, same as the LED: true = measuring
+// timing marker
 bool payload_confirmed_measuring(void)
 {
   if (GPIO_PinOutGet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN)) {
@@ -102,6 +104,37 @@ static bool payload_break(void)
   return ok;
 }
 
+// ask the ADCP its mode without interrupting it (Integrator's Guide 5.31): true if it answers 0001 = measuring
+static bool payload_inq_measuring(void)
+{
+  RTOS_ERR err;
+  uint8_t *rx_ptr;
+  UARTDRV_Count_t received = 0;
+  UARTDRV_Count_t remaining = 0;
+  bool measuring = false;
+
+  UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_wake_str, sizeof(payload_wake_str) - 1);
+  OSTimeDly(400, OS_OPT_TIME_DLY, &err);   // guide: @@@@@@ <delay 400 ms> before INQ
+  payload_listen();                        // fresh receive = the input flush the guide asks for
+  UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_inq_str, sizeof(payload_inq_str) - 1);
+
+  for (uint32_t waited = 0; waited < PAYLOAD_OK_TIMEOUT_MS; waited += PAYLOAD_POLL_MS) {
+      OSTimeDly(PAYLOAD_POLL_MS, OS_OPT_TIME_DLY, &err);
+      UARTDRV_GetReceiveStatus(sl_uartdrv_usart_payload_handle, &rx_ptr, &received, &remaining);
+      for (UARTDRV_Count_t i = 3; i < received; i++) {
+          if (payload_rx_buf[i - 3] == '0' && payload_rx_buf[i - 2] == '0' &&
+              payload_rx_buf[i - 1] == '0' && payload_rx_buf[i] == '1') {
+              measuring = true;
+          }
+      }
+      if (measuring) {
+          break;
+      }
+  }
+  printf("payload INQ reply (%lu bytes): %.*s\r\n", (unsigned long)received, (int)received, payload_rx_buf);
+  UARTDRV_Abort(sl_uartdrv_usart_payload_handle, uartdrvAbortReceive); // stop listening
+  return measuring;
+}
 
 // TODO: payload_ctrl_meas() and payload_ctrl_sleep() block the calling task (~1.5 s). Consider in future a separate payload task so the controller keeps sampling.
 
@@ -110,22 +143,17 @@ static bool payload_break(void)
 bool payload_init(void)
 {
   CMU_ClockEnable(cmuClock_GPIO, true);
-  GPIO_PinModeSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN, gpioModePushPull, 1); // HIGH = instrument ON
-  payload_commanded = PAYLOAD_STATE_MEASURING;
+  GPIO_PinModeSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN, gpioModePushPull, 0); // LOW until measuring is known
 
-//  // TEMP bench test: send the line once
-//  static uint8_t test_msg[] = "payload UART0 test\r\n";
-//  Ecode_t ec = UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, test_msg, sizeof(test_msg) - 1);
-//  printf("payload UART0 test sent, ecode=%lu\r\n", (unsigned long)ec);
-
-  // TEMP link test at boot: same break as adcp.py brk()
-  payload_break();
-
-  // TODO software switch: DONT assume state of payload.
-  // Serial payload runs through MCU reset so on startup payload may be in measurement mode.
-  // Use GETSTATE to query and set payload commanded based on the reply.
-  // Set PAYLOAD_STATE_UNKNOWN if no reply.
-
+  // ADCP keeps its state through an MCU reset: leave it alone if already measuring, otherwise start it
+  if (payload_inq_measuring()) {
+      GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // timing marker: already measuring
+      payload_commanded = PAYLOAD_STATE_MEASURING;
+      printf("payload_init: ADCP already measuring\r\n");
+  } else {
+      printf("payload_init: ADCP not measuring, starting it\r\n");
+      payload_ctrl_meas();
+  }
   return true;
 }
 
@@ -134,8 +162,7 @@ bool payload_ctrl_meas(void)
 {
   bool ok = true;
   payload_busy = true;
-
-
+  GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // timing marker: start of measure command sequence
 
   if (!payload_break()) {
       ok = false;
@@ -154,10 +181,10 @@ bool payload_ctrl_meas(void)
   }
 
   if (ok) {
-      GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // HIGH = instrument ON
+//      GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // HIGH = instrument ON
       payload_commanded = PAYLOAD_STATE_MEASURING;
   } else {
-      GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = not confirmed measuring
+//      GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = not confirmed measuring
       payload_commanded = PAYLOAD_STATE_UNKNOWN;
   }
   payload_busy = false;
@@ -169,6 +196,7 @@ bool payload_ctrl_sleep(void)
 {
   bool ok = true;
   payload_busy = true;
+  GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // timing marker: start of sleep command sequence
 
   if (!payload_break()) {
       ok = false;
@@ -187,10 +215,10 @@ bool payload_ctrl_sleep(void)
   }
 
   if (ok) {
-      GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = instrument OFF
+//      GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = instrument OFF
       payload_commanded = PAYLOAD_STATE_SLEEP;
   } else {
-      GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = not confirmed measuring
+//      GPIO_PinOutClear(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // LOW = not confirmed measuring
       payload_commanded = PAYLOAD_STATE_UNKNOWN;
   }
   payload_busy = false;
