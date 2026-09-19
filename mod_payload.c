@@ -23,17 +23,55 @@
 #define PAYLOAD_BREAK_GAP_MS   400  // between the two "K1W%!Q" (from adcp.py)
 #define PAYLOAD_REPLY_WAIT_MS  500  // TEMP: stands in for reading the reply
 
+#define PAYLOAD_OK_TIMEOUT_MS  1000  // give up waiting for "OK" after this long
+#define PAYLOAD_POLL_MS          10  // how often to check for received bytes
+#define PAYLOAD_RX_BUF_SIZE     256  // room for the longest reply
+
 static uint8_t payload_wake_str[]      = "@@@@@@";
 static uint8_t payload_break_str[]     = "K1W%!Q";
 static uint8_t payload_mc_str[]        = "MC\r\n";
 static uint8_t payload_start_str[]     = "START\r\n";
 static uint8_t payload_powerdown_str[] = "POWERDOWN\r\n";
 
+static uint8_t payload_rx_buf[PAYLOAD_RX_BUF_SIZE];
+
 static payload_state_t payload_commanded = PAYLOAD_STATE_UNKNOWN;
 static volatile bool payload_busy = false; // true while a command sequence is being sent
 
 payload_state_t payload_get_commanded(void) { return payload_commanded; }
 bool payload_is_busy(void) { return payload_busy; }
+
+// start saving whatever the payload sends back on PC5 (call BEFORE sending)
+static void payload_listen(void)
+{
+  UARTDRV_Receive(sl_uartdrv_usart_payload_handle, payload_rx_buf, sizeof(payload_rx_buf), NULL);
+}
+
+// wait for "OK" (true) or give up after PAYLOAD_OK_TIMEOUT_MS (false), then stop listening
+static bool payload_wait_ok(void)
+{
+  RTOS_ERR err;
+  uint8_t *rx_ptr;
+  UARTDRV_Count_t received = 0;
+  UARTDRV_Count_t remaining = 0;
+  bool got_ok = false;
+
+  for (uint32_t waited = 0; waited < PAYLOAD_OK_TIMEOUT_MS; waited += PAYLOAD_POLL_MS) {
+      OSTimeDly(PAYLOAD_POLL_MS, OS_OPT_TIME_DLY, &err);
+      UARTDRV_GetReceiveStatus(sl_uartdrv_usart_payload_handle, &rx_ptr, &received, &remaining);
+      for (UARTDRV_Count_t i = 1; i < received; i++) {
+          if (payload_rx_buf[i - 1] == 'O' && payload_rx_buf[i] == 'K') {
+              got_ok = true;
+          }
+      }
+      if (got_ok) {
+          break;
+      }
+  }
+
+  UARTDRV_Abort(sl_uartdrv_usart_payload_handle, uartdrvAbortReceive); // stop listening
+  return got_ok;
+}
 
 // Nortek break: wake characters, then the break string twice
 static void payload_break(void)
@@ -74,14 +112,16 @@ bool payload_init(void)
 // sets the payload ON or in measurement mode
 bool payload_ctrl_meas(void)
 {
-  RTOS_ERR err;
   payload_busy = true;
 
   GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // HIGH = instrument ON
 
   payload_break();
+  payload_listen();
   UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_mc_str, sizeof(payload_mc_str) - 1);    // TODO: only if the break reply says Confirmation mode
-  OSTimeDly(PAYLOAD_REPLY_WAIT_MS, OS_OPT_TIME_DLY, &err);                                           // TODO: wait for "OK" instead
+  if (!payload_wait_ok()) {
+      printf("payload_ctrl_meas: no OK after MC\r\n");
+  }
   UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, payload_start_str, sizeof(payload_start_str) - 1);
   payload_commanded = PAYLOAD_STATE_MEASURING;
   payload_busy = false;
