@@ -218,8 +218,11 @@ static void executive_task(void *p_arg) {
                       controller_task_suspend();
                   }
                   if (payload_status() != PAYLOAD_STATE_MEASURING) {
-                      payload_ctrl_meas(); // ensure payload is ON when acquisition stops
-                      printf("stop: payload was asleep, set to measuring\r\n");
+                      if (payload_ctrl_meas()) {
+                          printf("stop: payload not confirmed measuring, measure command confirmed\r\n");
+                      } else {
+                          printf("stop: payload not confirmed measuring, no reply to measure command, state UNKNOWN\r\n");
+                      }
                   }
                   if (button_task_is_running){
                       button_stop_acqu_task_suspend();

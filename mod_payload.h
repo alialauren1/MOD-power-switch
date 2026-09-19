@@ -30,4 +30,6 @@ payload_state_t payload_get_commanded(void); // last commanded state, always a f
 
 bool payload_is_busy(void);                  // true while a command sequence is being sent
 
+bool payload_confirmed_measuring(void);      // last confirmed state, matches the LED
+
 #endif /* MOD_PAYLOAD_H_ */

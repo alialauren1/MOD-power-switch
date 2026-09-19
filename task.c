@@ -443,7 +443,7 @@ void get_sensor_data_task(void *p_arg)
                           if (avg_sample_counter == (avg_sample_count+1)/2){            // integer division truncates so the +1 protects result if sample count is 1
                                t_ticks_mid = t_ticks;                                   // store the time halfway through the averaging of samples
                                hall_midway = hall_raw;                                      // store the direction when we will be recording the midway sample
-                               ctrl_out_midway = (payload_get_commanded() == PAYLOAD_STATE_MEASURING);
+                               ctrl_out_midway = payload_confirmed_measuring();
                           }
                           if (avg_sample_counter == avg_sample_count) {
                               if (system_get_logging_flag()){
@@ -800,7 +800,7 @@ void controller_task(void *p_arg) {
                  (int)(abs(latest_p_mbar) / 1000),
                  (int)(abs(latest_p_mbar) % 1000),
                  latest_hall,
-                 (payload_get_commanded() == PAYLOAD_STATE_MEASURING)); // TODO might not work the same when a serial output is received
+                 payload_confirmed_measuring()); // LED pin: last confirmed state;
 
           // controller's own bottom turn around detection, independent of the logger task
           if (ctrl_prev_hall != -1 && latest_hall != ctrl_prev_hall){
