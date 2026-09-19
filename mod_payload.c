@@ -23,7 +23,7 @@
 #define PAYLOAD_BREAK_GAP_MS   600  // between the two "K1W%!Q" (from adcp.py)
 //#define PAYLOAD_REPLY_WAIT_MS  500  // TEMP: stands in for reading the reply
 
-#define PAYLOAD_OK_TIMEOUT_MS  3000  // give up waiting for "OK" after this long
+#define PAYLOAD_OK_TIMEOUT_MS  5000  // give up waiting for "OK" after this long
 #define PAYLOAD_POLL_MS          10  // how often to check for received bytes
 #define PAYLOAD_RX_BUF_SIZE     256  // room for the longest reply
 
@@ -113,10 +113,13 @@ bool payload_init(void)
   GPIO_PinModeSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN, gpioModePushPull, 1); // HIGH = instrument ON
   payload_commanded = PAYLOAD_STATE_MEASURING;
 
-  // TEMP bench test: send the line once
-  static uint8_t test_msg[] = "payload UART0 test\r\n";
-  Ecode_t ec = UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, test_msg, sizeof(test_msg) - 1);
-  printf("payload UART0 test sent, ecode=%lu\r\n", (unsigned long)ec);
+//  // TEMP bench test: send the line once
+//  static uint8_t test_msg[] = "payload UART0 test\r\n";
+//  Ecode_t ec = UARTDRV_TransmitB(sl_uartdrv_usart_payload_handle, test_msg, sizeof(test_msg) - 1);
+//  printf("payload UART0 test sent, ecode=%lu\r\n", (unsigned long)ec);
+
+  // TEMP link test at boot: same break as adcp.py brk()
+  payload_break();
 
   // TODO software switch: DONT assume state of payload.
   // Serial payload runs through MCU reset so on startup payload may be in measurement mode.
