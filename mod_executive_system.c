@@ -181,6 +181,10 @@ static void executive_task(void *p_arg) {
                   if (run_time_vars.logging_on_flg){
                       retrieve_task_resume();           // pull from circular buf and store on sd card
                   }
+
+                  // check if measuring before resuming controller which also sends ADCP commands
+                  payload_ensure_measuring();       // ADCP may have been put to sleep while idle: start it only if not measuring
+
                   if (run_time_vars.controller_on_flg){
                       controller_task_resume();
                       controller_task_is_running=true;

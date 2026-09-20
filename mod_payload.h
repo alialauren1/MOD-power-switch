@@ -32,4 +32,6 @@ bool payload_is_busy(void);                  // true while a command sequence is
 
 bool payload_confirmed_measuring(void);      // last confirmed state, matches the LED
 
+bool payload_ensure_measuring(void);          // INQ check; start measuring only if not already
+
 #endif /* MOD_PAYLOAD_H_ */

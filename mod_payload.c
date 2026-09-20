@@ -146,15 +146,23 @@ bool payload_init(void)
   GPIO_PinModeSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN, gpioModePushPull, 0); // LOW until measuring is known
 
   // ADCP keeps its state through an MCU reset: leave it alone if already measuring, otherwise start it
+  payload_ensure_measuring();
+  return true;
+}
+
+// leave the ADCP alone if already measuring, otherwise start it (boot and start_acqu)
+bool payload_ensure_measuring(void)
+{
+  bool ok = true;
   if (payload_inq_measuring()) {
       GPIO_PinOutSet(PAYLOAD_OUTPUT_PORT, PAYLOAD_OUTPUT_PIN); // timing marker: already measuring
       payload_commanded = PAYLOAD_STATE_MEASURING;
-      printf("payload_init: ADCP already measuring\r\n");
+      printf("payload: ADCP already measuring\r\n");
   } else {
-      printf("payload_init: ADCP not measuring, starting it\r\n");
-      payload_ctrl_meas();
+      printf("payload: ADCP not measuring, starting it\r\n");
+      ok = payload_ctrl_meas();
   }
-  return true;
+  return ok;
 }
 
 // sets the payload ON or in measurement mode

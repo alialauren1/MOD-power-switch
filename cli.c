@@ -32,6 +32,7 @@
 #include "sl_sleeptimer.h"
 #include "task.h"
 #include "mod_executive_system.h"
+#include "mod_payload.h"
 
 /*******************************************************************************
  *******************************   DEFINES   ***********************************
@@ -59,6 +60,7 @@ void get_open_file_name_cmd(sl_cli_command_arg_t *arguments);
 void start_acquisition_cmd(sl_cli_command_arg_t *arguments);
 void stop_acquisition_cmd(sl_cli_command_arg_t *arguments);
 void read_sensors_cmd(sl_cli_command_arg_t *arguments);
+void payload_sleep_cmd(sl_cli_command_arg_t *arguments);
 
 //void set_switch_on_depth_cmd(sl_cli_command_arg_t *arguments);
 
@@ -153,6 +155,12 @@ static const sl_cli_command_info_t cmd__read_sensors = \
                  "",
                  { SL_CLI_ARG_END, });
 
+static const sl_cli_command_info_t cmd__payload_sleep = \
+  SL_CLI_COMMAND(payload_sleep_cmd,
+                 "put the ADCP to sleep for recovery, only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE",
+                 "",
+                 { SL_CLI_ARG_END, });
+
 //static const sl_cli_command_info_t cmd__set_switch_on_depth = \
 //  SL_CLI_COMMAND(set_switch_on_depth_cmd,
 //                 "set switch_on_depth_mbar, only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE",
@@ -175,6 +183,7 @@ static sl_cli_command_entry_t a_table[] = {
   { "stop_acqu",  &cmd__stop_acquisition,  false },
   { "read_sensors",    &cmd__read_sensors,    false },
 //  { "set_switch_on_depth", &cmd__set_switch_on_depth, false },
+  { "payload_sleep",   &cmd__payload_sleep,   false },
   { NULL, NULL, false },
 };
 
@@ -615,6 +624,27 @@ void read_sensors_cmd(sl_cli_command_arg_t *arguments) {
 //    system_set_switch_on_depth_mbar(depth_mbar);
 //    printf("switch_on_depth_mbar set to %ld\r\n", (long)depth_mbar);
 //}
+
+/****************************************************************************//**
+ * Callback for payload_sleep_cmd
+ *
+ * The command is used to put the ADCP to sleep after recovery (break, MC, POWERDOWN)
+ ******************************************************************************/
+void payload_sleep_cmd(sl_cli_command_arg_t *arguments) {
+    (void)arguments;
+
+    if (system_get_state() != SYS_RUNNING_MODE_CHECK_AND_IDLE) {
+        printf("command not available: stop_acqu first (only allowed in SYS_RUNNING_MODE_CHECK_AND_IDLE)\r\n");
+        return;
+    }
+
+    printf("payload_sleep requested, sending break, MC, POWERDOWN\r\n");
+    if (payload_ctrl_sleep()) {
+        printf("payload_sleep: ADCP confirmed asleep\r\n");
+    } else {
+        printf("payload_sleep: no reply, ADCP state UNKNOWN\r\n");
+    }
+}
 
 /*******************************************************************************
  **************************   GLOBAL FUNCTIONS   *******************************
